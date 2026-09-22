@@ -128,6 +128,27 @@ export interface ReflexDecision {
 
 ---
 
+## 📚 外部参考与生态致谢 / References & Ecosystem
+
+本项目是在研究与吸纳 Jev 开源生态前沿思想的基础上，从零独立手写实现的完整闭环工程。特别致谢以下开源项目与行业深度分析：
+
+1. **[standardagents/jevpilot](https://github.com/standardagents/jevpilot)**  
+   *A playable Three.js driving simulator with Jev-powered autopilot.*  
+   开源社区首个基于 Three.js 的 Jev 自动驾驶模拟器，为本项目在车道环境与 Jev 结构化动作调度方面提供了重要启发。
+
+2. **[khordoo/jev-reflex-autonomy-lab](https://github.com/khordoo/jev-reflex-autonomy-lab)**  
+   *Multi-drone autonomy lab demonstrating TypeSafe Jev reflex decisions with optional System 2 strategy guidance.*  
+   Mahmood Khordoo 打造的多无人机蜂群自主实验室，奠定了 System 1（反射小脑）与 System 2（宏观策略）双脑异步解耦的工程基石。
+
+3. **[AI应用新方向：Jev智驾决策，智驾系统“AI安全闸”](https://www.jiuyangongshe.com/a/4ep72l0l5b8)** (韭研公社)  
+   深入剖析了端到端大模型在智驾领域的“推理时延墙”痛点，系统性论证了 Jev 作为毫秒级“AI 安全闸”不可或缺的物理与商业价值。
+
+4. **社区精选资源**：
+   - **`awesome-jev-zh`**：Jev 中文社区生态、开源应用与实践论文精选。
+   - **`awesome-jev`**：全球 TypeSafe Jev 生态项目与开源工具大全。
+
+---
+
 ## 📄 开源许可证 / License
 
 本项目基于 [MIT License](LICENSE) 开源。欢迎 Star、Fork 并提交 PR 共建 Jev 具身智能生态！
