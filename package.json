@@ -1,0 +1,33 @@
+{
+  "name": "jev-pilot-reflex",
+  "private": false,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Three.js Autonomous Driving Reflex & AI Safety Brake Simulator powered by TypeSafe Jev System 1/2 Dual-Brain Architecture.",
+  "author": "ManHua",
+  "license": "MIT",
+  "keywords": [
+    "jev",
+    "typesafe",
+    "autonomous-driving",
+    "autopilot",
+    "reflex-engine",
+    "threejs",
+    "safety-brake",
+    "system-1-system-2",
+    "simulation"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.1",
+    "typescript": "^5.8.2",
+    "vite": "^6.4.3"
+  }
+}

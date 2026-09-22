@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JevPilot Reflex · Three.js 智驾决策与 AI 安全闸仿真器</title>
+    <meta name="description" content="基于 TypeSafe Jev 毫秒级类型化决策与 System 1/2 双脑架构的 Three.js 智驾决策与 AI 安全闸仿真实验室。" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 3D Canvas Mount Point -->
+      <div id="canvas-container"></div>
+
+      <!-- Telemetry HUD Overlay -->
+      <div id="hud-overlay">
+        <div class="hud-panel hud-telemetry">
+          <div class="hud-header">
+            <span class="hud-badge">JEV SYSTEM 1 REFLEX</span>
+            <span id="hud-fps" class="hud-meta">60 FPS</span>
+          </div>
+          
+          <div class="hud-stat-grid">
+            <div class="hud-stat">
+              <span class="hud-stat-label">自车车速 / SPEED</span>
+              <span id="hud-speed" class="hud-stat-value">0 <small>km/h</small></span>
+            </div>
+            <div class="hud-stat">
+              <span class="hud-stat-label">碰撞时间 / TTC</span>
+              <span id="hud-ttc" class="hud-stat-value safe">-- <small>s</small></span>
+            </div>
+            <div class="hud-stat">
+              <span class="hud-stat-label">前车车距 / DIST</span>
+              <span id="hud-dist" class="hud-stat-value">-- <small>m</small></span>
+            </div>
+            <div class="hud-stat">
+              <span class="hud-stat-label">反射时延 / LATENCY</span>
+              <span id="hud-latency" class="hud-stat-value highlight">-- <small>ms</small></span>
+            </div>
+          </div>
+
+          <div class="hud-action-row">
+            <div class="hud-action-box">
+              <span class="hud-stat-label">JEV DECISION</span>
+              <div id="hud-action" class="hud-action-text">ADAPTIVE_CRUISE</div>
+            </div>
+            <div class="hud-action-box">
+              <span class="hud-stat-label">CONFIDENCE</span>
+              <div id="hud-confidence" class="hud-action-text">98%</div>
+            </div>
+          </div>
+
+          <!-- Safety Brake Interlock Status -->
+          <div id="hud-safety-gate" class="hud-gate-banner gate-armed">
+            <span class="gate-icon">🛡️</span>
+            <span id="hud-gate-text">AI 安全闸待命 (Safety Gate Armed)</span>
+          </div>
+        </div>
+
+        <!-- System 2 Guidance Card -->
+        <div class="hud-panel hud-system2">
+          <div class="hud-header">
+            <span class="hud-badge s2">SYSTEM 2 STRATEGY (ASYNC)</span>
+            <span id="hud-s2-status" class="hud-meta">IDLE</span>
+          </div>
+          <p id="hud-s2-guidance" class="hud-s2-text">
+            宏观巡航模式：保持中道行驶，推荐巡航时速 100 km/h。System 1 正在以 60 Hz 频率执行毫秒级微操与碰撞仲裁。
+          </p>
+        </div>
+
+        <!-- Controls Dock -->
+        <div class="hud-controls">
+          <button id="btn-toggle-pilot" class="ctrl-btn active">🤖 Jev 智驾托管: ON</button>
+          <button id="btn-trigger-obstacle" class="ctrl-btn alert">⚠️ 突发障碍物入侵</button>
+          <button id="btn-trigger-cutin" class="ctrl-btn warning">⚡ 前车紧急切入</button>
+          <button id="btn-toggle-camera" class="ctrl-btn">🎥 切换视角</button>
+          <button id="btn-reset" class="ctrl-btn">🔄 重置场景</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
