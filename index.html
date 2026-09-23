@@ -1,84 +1,126 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>JevPilot Reflex · Three.js 智驾决策与 AI 安全闸仿真器</title>
-    <meta name="description" content="基于 TypeSafe Jev 毫秒级类型化决策与 System 1/2 双脑架构的 Three.js 智驾决策与 AI 安全闸仿真实验室。" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>" />
-    <link rel="stylesheet" href="./src/style.css" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="Take the wheel or let AI choose its own path. An interactive driving playground powered by Jev from TypeSafe AI."
+    />
+    <title>JevPilot — An autonomy playground</title>
+    <link rel="canonical" href="https://jevpilot.standardagents.ai/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="JevPilot" />
+    <meta property="og:title" content="JevPilot — An autonomy playground" />
+    <meta
+      property="og:description"
+      content="Take the wheel or let AI choose its own path. An interactive driving playground powered by Jev from TypeSafe AI."
+    />
+    <meta property="og:url" content="https://jevpilot.standardagents.ai/" />
+    <meta
+      property="og:image"
+      content="https://jevpilot.standardagents.ai/og/jevpilot-v1.jpg"
+    />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1733" />
+    <meta property="og:image:height" content="907" />
+    <meta
+      property="og:image:alt"
+      content="JevPilot: a white electric car exploring a city with blue and amber steering paths."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="JevPilot — An autonomy playground" />
+    <meta
+      name="twitter:description"
+      content="Take the wheel or let AI choose its own path. An interactive driving playground powered by Jev from TypeSafe AI."
+    />
+    <meta
+      name="twitter:image"
+      content="https://jevpilot.standardagents.ai/og/jevpilot-v1.jpg"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="JevPilot: a white electric car exploring a city with blue and amber steering paths."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/brand/standard-agents-mark.svg"
+    />
+    <style>
+      #scene-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 16px;
+        background: #f5f6f8;
+        color: #171a20;
+        font:
+          14px system-ui,
+          sans-serif;
+        text-align: center;
+        padding: 24px;
+      }
+      #scene-loader[hidden],
+      #scene-loader [hidden] {
+        display: none;
+      }
+      #scene-loader img {
+        width: 40px;
+        height: 40px;
+      }
+      #scene-loader strong {
+        font-size: 20px;
+        font-weight: 600;
+      }
+      #scene-loader p {
+        margin: 0;
+        color: #737985;
+      }
+      .loading-spinner {
+        width: 22px;
+        height: 22px;
+        border: 2px solid #dfe2e6;
+        border-top-color: #171a20;
+        border-radius: 50%;
+        animation: loading-spin 0.9s linear infinite;
+      }
+      #loading-retry {
+        border: 0;
+        border-radius: 8px;
+        padding: 12px 18px;
+        background: #171a20;
+        color: white;
+        cursor: pointer;
+      }
+      @keyframes loading-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .loading-spinner {
+          animation: none;
+        }
+      }
+    </style>
   </head>
-  <body>
-    <div id="app">
-      <!-- 3D Canvas Mount Point -->
-      <div id="canvas-container"></div>
-
-      <!-- Telemetry HUD Overlay -->
-      <div id="hud-overlay">
-        <div class="hud-panel hud-telemetry">
-          <div class="hud-header">
-            <span class="hud-badge">JEV SYSTEM 1 REFLEX</span>
-            <span id="hud-fps" class="hud-meta">60 FPS</span>
-          </div>
-          
-          <div class="hud-stat-grid">
-            <div class="hud-stat">
-              <span class="hud-stat-label">自车车速 / SPEED</span>
-              <span id="hud-speed" class="hud-stat-value">0 <small>km/h</small></span>
-            </div>
-            <div class="hud-stat">
-              <span class="hud-stat-label">碰撞时间 / TTC</span>
-              <span id="hud-ttc" class="hud-stat-value safe">-- <small>s</small></span>
-            </div>
-            <div class="hud-stat">
-              <span class="hud-stat-label">前车车距 / DIST</span>
-              <span id="hud-dist" class="hud-stat-value">-- <small>m</small></span>
-            </div>
-            <div class="hud-stat">
-              <span class="hud-stat-label">反射时延 / LATENCY</span>
-              <span id="hud-latency" class="hud-stat-value highlight">-- <small>ms</small></span>
-            </div>
-          </div>
-
-          <div class="hud-action-row">
-            <div class="hud-action-box">
-              <span class="hud-stat-label">JEV DECISION</span>
-              <div id="hud-action" class="hud-action-text">ADAPTIVE_CRUISE</div>
-            </div>
-            <div class="hud-action-box">
-              <span class="hud-stat-label">CONFIDENCE</span>
-              <div id="hud-confidence" class="hud-action-text">98%</div>
-            </div>
-          </div>
-
-          <!-- Safety Brake Interlock Status -->
-          <div id="hud-safety-gate" class="hud-gate-banner gate-armed">
-            <span class="gate-icon">🛡️</span>
-            <span id="hud-gate-text">AI 安全闸待命 (Safety Gate Armed)</span>
-          </div>
-        </div>
-
-        <!-- System 2 Guidance Card -->
-        <div class="hud-panel hud-system2">
-          <div class="hud-header">
-            <span class="hud-badge s2">SYSTEM 2 STRATEGY (ASYNC)</span>
-            <span id="hud-s2-status" class="hud-meta">IDLE</span>
-          </div>
-          <p id="hud-s2-guidance" class="hud-s2-text">
-            宏观巡航模式：保持中道行驶，推荐巡航时速 100 km/h。System 1 正在以 60 Hz 频率执行毫秒级微操与碰撞仲裁。
-          </p>
-        </div>
-
-        <!-- Controls Dock -->
-        <div class="hud-controls">
-          <button id="btn-toggle-pilot" class="ctrl-btn active">🤖 Jev 智驾托管: ON</button>
-          <button id="btn-trigger-obstacle" class="ctrl-btn alert">⚠️ 突发障碍物入侵</button>
-          <button id="btn-trigger-cutin" class="ctrl-btn warning">⚡ 前车紧急切入</button>
-          <button id="btn-toggle-camera" class="ctrl-btn">🎥 切换视角</button>
-          <button id="btn-reset" class="ctrl-btn">🔄 重置场景</button>
-        </div>
-      </div>
+  <body class="loading">
+    <div id="scene-loader" role="status" aria-live="polite">
+      <img src="/brand/standard-agents-mark.svg" alt="" />
+      <strong>Getting your drive ready</strong>
+      <p id="loading-message">Loading JevPilot…</p>
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <button id="loading-retry" hidden>Try again</button>
     </div>
-    <script type="module" src="./src/main.ts"></script>
+    <div id="app" inert aria-busy="true"></div>
+    <script type="module" src="/src/bootstrap.js"></script>
   </body>
 </html>

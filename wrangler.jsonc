@@ -1,0 +1,44 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jevpilot",
+  "account_id": "fd9e24c9339e83e73661475690574340",
+  "main": "server/worker.js",
+  "compatibility_date": "2026-09-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    { "pattern": "jevpilot.standardagents.ai", "custom_domain": true },
+  ],
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/", "/index.html", "/login", "/login.html", "/api/*"],
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PLAY_ACCOUNTS", "class_name": "PlayAccount" },
+      {
+        "name": "WAITLIST",
+        "class_name": "DurableAgentBuilder",
+        "script_name": "agents-standardagentbuilder-com",
+      },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PlayAccount"] }],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "703842",
+      "simple": { "limit": 20, "period": 60 },
+    },
+  ],
+  "vars": {
+    "APP_ORIGIN": "https://jevpilot.standardagents.ai",
+    "PLATFORM_URL": "https://api.standardagents.ai",
+    "PLATFORM_PROJECT_ID": "c95d8b94-38b6-4130-92ae-17de0c29c0ed",
+    "JEV_INPUT_PRICE": "0.042",
+    "JEV_OUTPUT_PRICE": "0",
+  },
+  "observability": { "enabled": true },
+}
