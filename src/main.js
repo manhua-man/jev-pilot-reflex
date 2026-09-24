@@ -272,10 +272,6 @@ function setPilot(on) {
     $("credit-dialog").showModal();
     return;
   }
-  if (on && !configured) {
-    toast("Jev is not connected. Check the API key on the server.", "error");
-    return;
-  }
   if (sim.crash || (on && sim.complete)) return;
   sim.autopilot = on;
   if (on) sim.freeExplore = false;

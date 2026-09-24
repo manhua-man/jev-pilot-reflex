@@ -3,7 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { signalState } from "./world.js";
 import { RoadVectors } from "./road-vectors.js";
 import { CrashEffects } from "./crash-effects.js";
-import { dist } from "./math.js";
+import { dist, heading, move } from "./math.js";
 import {
   materials as M,
   material as mat,
@@ -145,6 +145,95 @@ function interstateGuide({ text, detail, direction = "straight" }) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+function forkGuideSign({ main, sub, arrow = "left", detail = "KEEP LANE · 保持车道" }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800;
+  canvas.height = 400;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#15803d";
+  ctx.fillRect(0, 0, 800, 400);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.roundRect(16, 16, 768, 368, 16);
+  ctx.stroke();
+
+  // Top header bar
+  ctx.fillStyle = "#166534";
+  ctx.fillRect(20, 20, 760, 60);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 28px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("FORK JUNCTION · 分岔路口", 40, 50);
+
+  // Main English text
+  ctx.font = "bold 44px sans-serif";
+  ctx.fillText(main || "EXPRESSWAY", 40, 135);
+
+  // Chinese subtitle
+  ctx.fillStyle = "#facc15";
+  ctx.font = "bold 42px sans-serif";
+  ctx.fillText(sub || "快速路 · 机场", 40, 210);
+
+  // Detail / instruction
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 26px sans-serif";
+  ctx.fillText(detail || "CHOOSE LANE · 提前减速变道", 40, 315);
+
+  // Directional arrow
+  ctx.save();
+  ctx.translate(680, 200);
+  ctx.rotate(arrow === "left" ? -Math.PI / 4 : Math.PI / 4);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.moveTo(0, -65);
+  ctx.lineTo(-42, -15);
+  ctx.lineTo(-16, -15);
+  ctx.lineTo(-16, 55);
+  ctx.lineTo(16, 55);
+  ctx.lineTo(16, -15);
+  ctx.lineTo(42, -15);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+function hazardSignTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0284c7";
+  ctx.fillRect(0, 0, 512, 256);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(10, 10, 492, 236);
+
+  ctx.fillStyle = "#ffffff";
+  for (const [cx, dir] of [[150, -1], [362, 1]]) {
+    ctx.save();
+    ctx.translate(cx, 128);
+    for (const offset of [-40, 20]) {
+      ctx.beginPath();
+      ctx.moveTo(offset * dir, -70);
+      ctx.lineTo((offset + 35) * dir, 0);
+      ctx.lineTo(offset * dir, 70);
+      ctx.lineTo((offset - 25) * dir, 70);
+      ctx.lineTo((offset + 10) * dir, 0);
+      ctx.lineTo((offset - 25) * dir, -70);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -357,82 +446,74 @@ export class DriveScene {
     if (world.type === "highway") this.buildHighway(s, world);
     for (const e of world.type === "highway" ? [] : world.edges) {
       const a = world.byId[e.a],
-        b = world.byId[e.b],
-        vertical = a.x === b.x,
-        len = dist(a, b),
+        b = world.byId[e.b];
+      if (!a || !b) continue;
+      const len = dist(a, b),
         x = (a.x + b.x) / 2,
-        z = (a.z + b.z) / 2;
-      box(
-        s,
-        vertical ? 16 : len + 0.2,
-        0.26,
-        vertical ? len + 0.2 : 16,
-        x,
-        -0.12,
-        z,
-        "#d8d6c9",
-      );
-      box(
-        s,
-        vertical ? 12 : len + 0.3,
-        0.1,
-        vertical ? len + 0.3 : 12,
-        x,
-        0.015,
-        z,
-        "#73817e",
-      );
-      for (let k = 12; k < len - 10; k += 8)
-        box(
-          s,
-          vertical ? 0.13 : 3.2,
-          0.02,
-          vertical ? 3.2 : 0.13,
-          vertical ? x : a.x + k,
-          0.081,
-          vertical ? a.z + k : z,
-          "#d5d7b4",
-        );
-      for (const dir of [-1, 1])
-        box(
-          s,
-          vertical ? 0.1 : len - 18,
-          0.015,
-          vertical ? len - 18 : 0.1,
-          vertical ? x + dir * 5.5 : x,
-          0.077,
-          vertical ? z : z + dir * 5.5,
-          "#b6c0b0",
-        );
+        z = (a.z + b.z) / 2,
+        h = heading(a, b),
+        roadWidth = e.width || 20;
+
+      // Concrete sidewalk base
+      box(s, roadWidth + 4, 0.26, len + 0.2, x, -0.12, z, "#d8d6c9", -h);
+
+      // Dark asphalt road surface
+      box(s, roadWidth, 0.1, len + 0.3, x, 0.015, z, "#262b30", -h);
+
+      // Double solid yellow center lines (双黄实线 at ±0.26m)
+      for (const yellowOffset of [-0.26, 0.26]) {
+        const yp = move({ x, z }, h + Math.PI / 2, yellowOffset);
+        box(s, 0.14, 0.022, Math.max(1, len - 16), yp.x, 0.082, yp.z, "#facc15", -h);
+      }
+
+      // Lane dividing dashed lines (4车道划分白色虚线 at ±roadWidth/4)
+      const laneOffset = roadWidth / 4;
+      for (let k = 14; k < len - 14; k += 8) {
+        for (const sd of [-laneOffset, laneOffset]) {
+          const dp = move(move(a, h, k), h + Math.PI / 2, sd);
+          box(s, 0.15, 0.02, 3.5, dp.x, 0.081, dp.z, "#f8fafc", -h);
+        }
+      }
+
+      // Road shoulder / curb boundary lines (外侧白色实线)
+      const edgeOffset = roadWidth / 2 - 0.7;
+      for (const sd of [-edgeOffset, edgeOffset]) {
+        const ep = move({ x, z }, h + Math.PI / 2, sd);
+        box(s, 0.18, 0.018, Math.max(1, len - 16), ep.x, 0.080, ep.z, "#f8fafc", -h);
+      }
     }
+
     for (const n of world.nodes.filter(
-      (node) => world.type !== "highway" || node.townJunction,
+      (node) => (world.type !== "highway" || node.townJunction) && node.control !== "none",
     )) {
-      box(s, 12.1, 0.1, 12.1, n.x, 0.018, n.z, "#73817e");
+      box(s, 20.1, 0.1, 20.1, n.x, 0.018, n.z, "#262b30");
       for (const id of n.neighbors) {
-        const b = world.byId[id],
-          dx = Math.sign(b.x - n.x),
+        const b = world.byId[id];
+        if (!b) continue;
+        const dx = Math.sign(b.x - n.x),
           dz = Math.sign(b.z - n.z);
-        for (let k = -4.5; k <= 4.5; k += 1.5)
+        // Pedestrian crosswalk (zebra stripes across all 4 lanes: -8.0m to +8.0m)
+        for (let k = -8.0; k <= 8.0; k += 1.6)
           box(
             s,
-            dx ? 1.8 : 0.7,
+            dx ? 2.2 : 0.8,
             0.021,
-            dx ? 0.7 : 1.8,
-            n.x + dx * 7 + (dz ? k : 0),
+            dx ? 0.8 : 2.2,
+            n.x + dx * 11 + (dz ? k : 0),
             0.081,
-            n.z + dz * 7 + (dx ? k : 0),
-            "#ecebd9",
+            n.z + dz * 11 + (dx ? k : 0),
+            "#f8fafc",
           );
+        // Stop line across incoming lanes (0 to 9.2m)
         box(
           s,
-          dx ? 0.22 : 5,
+          dx ? 0.35 : 9.2,
           0.025,
-          dx ? 5 : 0.22,
-          n.x + dx * 10 + (dz ? dz * 3 : 0),
+          dx ? 9.2 : 0.35,
+          n.x + dx * 13.5 + (dz ? dz * 4.6 : 0),
           0.083,
-          n.z + dz * 10 + (dx ? -dx * 3 : 0),
-          "#ecebd9",
+          n.z + dz * 13.5 + (dx ? -dx * 4.6 : 0),
+          "#f8fafc",
         );
       }
     }
@@ -519,6 +600,88 @@ export class DriveScene {
         );
         sign.position.set(o.x, 2.7, o.z);
         s.add(sign);
+        continue;
+      }
+      if (o.type === "fork_gantry") {
+        for (const xOff of [-13, 13]) {
+          cyl(s, 0.22, 8.5, o.x + xOff, 4.25, o.z, "#64748b");
+        }
+        box(s, 26.5, 0.35, 0.35, o.x, 7.8, o.z, "#64748b");
+        box(s, 26.5, 0.35, 0.35, o.x, 8.6, o.z, "#64748b");
+        const airportMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(8.2, 4.0),
+          new THREE.MeshBasicMaterial({
+            map: forkGuideSign({
+              main: o.leftText || "AIRPORT EXPWY ↖",
+              sub: o.leftSub || "机场快速路 · 科技城",
+              arrow: "left",
+            }),
+            side: THREE.DoubleSide,
+          }),
+        );
+        airportMesh.position.set(o.x + 5.5, 7.2, o.z);
+        airportMesh.rotation.y = Math.PI;
+        s.add(airportMesh);
+
+        const downtownMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(8.2, 4.0),
+          new THREE.MeshBasicMaterial({
+            map: forkGuideSign({
+              main: o.rightText || "DOWNTOWN CBD ↗",
+              sub: o.rightSub || "中央大道 · 市中心",
+              arrow: "right",
+            }),
+            side: THREE.DoubleSide,
+          }),
+        );
+        downtownMesh.position.set(o.x - 5.5, 7.2, o.z);
+        downtownMesh.rotation.y = Math.PI;
+        s.add(downtownMesh);
+        continue;
+      }
+      if (o.type === "fork_gore") {
+        const goreLen = o.length || 34;
+        const goreW = o.width || 15;
+        box(s, goreW * 0.7, 0.1, goreLen * 0.9, o.x, 0.02, o.z + goreLen * 0.45, "#22272c");
+        for (const side of [-1, 1]) {
+          const angle = side * Math.atan2(goreW / 2, goreLen);
+          box(s, 0.35, 0.022, Math.hypot(goreW / 2, goreLen), o.x + side * (goreW / 4), 0.082, o.z + goreLen / 2, "#f8fafc", -angle);
+        }
+        for (let d = 4; d < goreLen - 3; d += 3.2) {
+          const span = (d / goreLen) * (goreW - 2.5);
+          for (const leg of [-1, 1]) {
+            const hLeg = leg * 0.55;
+            box(s, 0.28, 0.02, span * 0.65, o.x + leg * (span * 0.28), 0.083, o.z + d, "#facc15", -hLeg);
+          }
+        }
+        continue;
+      }
+      if (o.type === "crash_barrels") {
+        const barrelCoords = [
+          [0, 0],
+          [-0.8, 1.4],
+          [0.8, 1.4],
+          [-1.5, 2.8],
+          [0, 2.8],
+          [1.5, 2.8],
+        ];
+        for (const [bx, bz] of barrelCoords) {
+          cyl(s, 0.42, 1.05, o.x + bx, 0.525, o.z + bz, "#f59e0b", 12);
+          cyl(s, 0.425, 0.26, o.x + bx, 0.525, o.z + bz, "#1e293b", 12);
+          cyl(s, 0.43, 0.08, o.x + bx, 0.525, o.z + bz, "#f8fafc", 12);
+          cyl(s, 0.435, 0.06, o.x + bx, 1.05, o.z + bz, "#0f172a", 12);
+        }
+        cyl(s, 0.08, 2.8, o.x, 1.4, o.z + 4.2, "#64748b");
+        const hazardMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(2.4, 1.2),
+          new THREE.MeshBasicMaterial({
+            map: hazardSignTexture(),
+            side: THREE.DoubleSide,
+          }),
+        );
+        hazardMesh.position.set(o.x, 2.4, o.z + 4.15);
+        hazardMesh.rotation.y = Math.PI;
+        s.add(hazardMesh);
         continue;
       }
       if (o.type === "streetlight") {

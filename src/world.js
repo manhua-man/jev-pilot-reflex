@@ -57,7 +57,7 @@ export function generateWorld(seed, type = "town") {
         offset: Math.floor(r() * 14),
         neighbors: [],
       });
-  const link = (a, b) => {
+  const link = (a, b, customWidth = 20, customName = null) => {
     a.neighbors.push(b.id);
     b.neighbors.push(a.id);
     edges.push({
@@ -65,10 +65,11 @@ export function generateWorld(seed, type = "town") {
       a: a.id,
       b: b.id,
       length: dist(a, b),
-      width: 12,
+      width: customWidth,
       speedLimit: theme.limit,
       name:
-        choose(r, [
+        customName ||
+        (choose(r, [
           "Cedar",
           "Maple",
           "Willow",
@@ -76,18 +77,87 @@ export function generateWorld(seed, type = "town") {
           "Oak",
           "Birch",
           "Laurel",
-        ]) + choose(r, [" Street", " Avenue", " Way"]),
+        ]) + choose(r, [" Street", " Avenue", " Way"])),
     });
   };
   // All horizontal streets and a vertical spine ensure connectivity; other links vary.
   for (const p of nodes) {
     if (p.i < n - 1) link(p, nodes[p.j * n + p.i + 1]);
-    if (p.j < n - 1 && (p.i === 2 || (p.i === 1 && p.j === 1) || r() > 0.16))
-      link(p, nodes[(p.j + 1) * n + p.i]);
+    if (p.j < n - 1 && (p.i === 2 || r() > 0.16)) {
+      if (!(p.i === 1 && p.j === 1)) {
+        link(p, nodes[(p.j + 1) * n + p.i]);
+      }
+    }
   }
+
+  // Explicit Fork Road (分岔路 / Y-Bifurcation):
+  // The main avenue departing from startNode (j1-1) heads towards forkJunction,
+  // then bifurcates into Northwest Expressway (forkLeft) and Downtown Boulevard (forkRight).
+  const nodeStart = nodes[n + 1]; // j1-1
+  const nodeNext = nodes[2 * n + 1]; // j2-1
+  const forkZ = zs[1] + (zs[2] - zs[1]) * 0.44;
+  const forkJunction = {
+    id: "fork-junction",
+    x: xs[1],
+    z: forkZ,
+    control: "none",
+    offset: 0,
+    neighbors: [],
+    isFork: true,
+  };
+  const forkLeft = {
+    id: "fork-left",
+    x: xs[1] - 40,
+    z: zs[2],
+    control: "none",
+    offset: 0,
+    neighbors: [],
+  };
+  const forkRight = {
+    id: "fork-right",
+    x: xs[1] + 40,
+    z: zs[2],
+    control: "none",
+    offset: 0,
+    neighbors: [],
+  };
+  nodes.push(forkJunction, forkLeft, forkRight);
+
+  // Link main avenue to fork, then fork to both branches:
+  link(nodeStart, forkJunction, 20, "Grand Avenue · Fork Approach");
+  link(forkJunction, forkLeft, 16, "Northwest Expressway ↖ (Airport)");
+  link(forkJunction, forkRight, 16, "Downtown Boulevard ↗ (CBD)");
+
+  // Connect branches onward to the city grid:
+  link(forkLeft, nodes[2 * n + 0], 20, "West Ring Road"); // j2-0
+  link(forkLeft, nodeNext, 20, "Central Spine Avenue"); // j2-1
+  if (n > 3) link(forkLeft, nodes[3 * n + 1], 20, "North Highway"); // j3-1
+
+  link(forkRight, nodes[2 * n + 2], 20, "East Business Parkway"); // j2-2
+  link(forkRight, nodeNext, 20, "Central Spine Avenue"); // j2-1
+  if (n > 3) link(forkRight, nodes[3 * n + 2], 20, "East Outer Loop"); // j3-2
+
   let id = 0;
   const add = (type, x, z, props = {}) =>
     objects.push({ id: `${type}-${id++}`, type, x, z, ...props });
+
+  // Add specialized 3D objects for the Fork Road
+  add("fork_gantry", xs[1], forkZ - 22, {
+    approach: 0,
+    leftText: "AIRPORT EXPWY ↖",
+    leftSub: "机场快速路 · 科技城",
+    rightText: "DOWNTOWN CBD ↗",
+    rightSub: "中心商务区 · 金融街",
+  });
+  add("fork_gore", xs[1], forkZ + 8, {
+    leftTarget: { x: forkLeft.x, z: forkLeft.z },
+    rightTarget: { x: forkRight.x, z: forkRight.z },
+    length: 34,
+    width: 15,
+  });
+  add("crash_barrels", xs[1], forkZ + 8, {
+    count: 4,
+  });
   for (let j = 0; j < n - 1; j++)
     for (let i = 0; i < n - 1; i++) {
       const x = (xs[i] + xs[i + 1]) / 2,
@@ -95,11 +165,11 @@ export function generateWorld(seed, type = "town") {
         w = xs[i + 1] - xs[i],
         d = zs[j + 1] - zs[j],
         park = r() > theme.buildings;
-      add("parcel", x, z, { width: w - 17, depth: d - 17, park });
+      add("parcel", x, z, { width: w - 26, depth: d - 26, park });
       for (const dx of [-1, 1])
         for (const dz of [-1, 1]) {
-          const bx = x + dx * (w / 2 - 17),
-            bz = z + dz * (d / 2 - 17);
+          const bx = x + dx * (w / 2 - 26),
+            bz = z + dz * (d / 2 - 26);
           if (!park) {
             const style =
               type === "city"
@@ -107,8 +177,8 @@ export function generateWorld(seed, type = "town") {
                 : choose(r, ["cottage", "cottage", "modern", "townhouse"]);
             add("building", bx, bz, {
               style,
-              width: (type === "city" ? 16 : 10) + r() * 2,
-              depth: (type === "city" ? 16 : 10) + r() * 2,
+              width: (type === "city" ? 15 : 10) + r() * 2,
+              depth: (type === "city" ? 15 : 10) + r() * 2,
               height:
                 style === "skyscraper"
                   ? 34 + r() * 58
@@ -137,18 +207,18 @@ export function generateWorld(seed, type = "town") {
       if (!park) {
         for (const axis of ["x", "z"]) {
           const length = axis === "x" ? w : d;
-          for (let t = -length / 2 + 39; t < length / 2 - 28; t += 24) {
+          for (let t = -length / 2 + 42; t < length / 2 - 32; t += 26) {
             for (const side of [-1, 1]) {
-              const bx = axis === "x" ? x + t : x + side * (w / 2 - 17);
-              const bz = axis === "z" ? z + t : z + side * (d / 2 - 17);
+              const bx = axis === "x" ? x + t : x + side * (w / 2 - 26);
+              const bz = axis === "z" ? z + t : z + side * (d / 2 - 26);
               const style =
                 type === "city"
                   ? choose(r, ["skyscraper", "skyscraper", "apartment"])
                   : choose(r, ["cottage", "modern"]);
               add("building", bx, bz, {
                 style,
-                width: (type === "city" ? 16 : 10) + r() * 2,
-                depth: (type === "city" ? 16 : 10) + r() * 2,
+                width: (type === "city" ? 15 : 10) + r() * 2,
+                depth: (type === "city" ? 15 : 10) + r() * 2,
                 height:
                   style === "skyscraper"
                     ? 32 + r() * 65
@@ -177,7 +247,7 @@ export function generateWorld(seed, type = "town") {
         }
       }
       for (let k = 0; k < (park ? 22 : 12); k++)
-        add("tree", x + (r() - 0.5) * (w - 22), z + (r() - 0.5) * (d - 22), {
+        add("tree", x + (r() - 0.5) * (w - 30), z + (r() - 0.5) * (d - 30), {
           height: 4 + r() * 5,
           kind: r() > 0.3 ? "round" : "pine",
         });
@@ -190,13 +260,13 @@ export function generateWorld(seed, type = "town") {
       "tree",
       side < 2
         ? side === 0
-          ? xs[0] - 17
-          : xs.at(-1) + 17
+          ? xs[0] - 22
+          : xs.at(-1) + 22
         : xs[0] + r() * (xs.at(-1) - xs[0]),
       side >= 2
         ? side === 2
-          ? zs[0] - 17
-          : zs.at(-1) + 17
+          ? zs[0] - 22
+          : zs.at(-1) + 22
         : zs[0] + r() * (zs.at(-1) - zs[0]),
       { height: 5 + r() * 7, kind: choose(r, ["round", "pine"]) },
     );
@@ -204,9 +274,10 @@ export function generateWorld(seed, type = "town") {
   const byId = Object.fromEntries(nodes.map((v) => [v.id, v]));
   for (const node of nodes)
     for (const nid of node.neighbors) {
+      if (node.control === "none") continue;
       const other = byId[nid],
         h = heading(other, node),
-        p = move(move(node, h, -9), h + Math.PI / 2, 6.9);
+        p = move(move(node, h, -12), h + Math.PI / 2, 10.8);
       add(node.control === "stop" ? "stop_sign" : "traffic_light", p.x, p.z, {
         nodeId: node.id,
         approach: h,
@@ -214,7 +285,7 @@ export function generateWorld(seed, type = "town") {
       });
     }
   const startNode = nodes[n + 1],
-    nextNode = nodes[2 * n + 1];
+    nextNode = forkJunction;
   // A random destination on the far half of the graph, always reachable.
   const destination = choose(
     r,
@@ -225,14 +296,32 @@ export function generateWorld(seed, type = "town") {
     .filter((o) => o.style === "skyscraper")
     .forEach((o, i) => (o.color = glassColors[i % glassColors.length]));
   const buildings = objects.filter((o) => o.type === "building");
+  const distToEdge = (b, e) => {
+    const a = byId[e.a], c = byId[e.b];
+    if (!a || !c) return Infinity;
+    const dx = c.x - a.x, dz = c.z - a.z;
+    const l2 = dx * dx + dz * dz;
+    if (!l2) return dist(b, a);
+    const t = Math.max(0, Math.min(1, ((b.x - a.x) * dx + (b.z - a.z) * dz) / l2));
+    return Math.hypot(b.x - (a.x + t * dx), b.z - (a.z + t * dz));
+  };
   const clearObjects = objects.filter(
-    (o) =>
-      o.type !== "tree" ||
-      !buildings.some(
-        (b) =>
-          Math.abs(o.x - b.x) < b.width / 2 + 1.8 &&
-          Math.abs(o.z - b.z) < b.depth / 2 + 1.8,
-      ),
+    (o) => {
+      if (o.type === "building" || o.type === "tree") {
+        for (const e of edges) {
+          const buffer = o.type === "building" ? Math.max(o.width, o.depth) / 2 + 2.0 : 2.5;
+          if (distToEdge(o, e) < e.width / 2 + buffer) return false;
+        }
+      }
+      return (
+        o.type !== "tree" ||
+        !buildings.some(
+          (b) =>
+            Math.abs(o.x - b.x) < b.width / 2 + 1.8 &&
+            Math.abs(o.z - b.z) < b.depth / 2 + 1.8,
+        )
+      );
+    },
   );
   const world = {
     seed,
@@ -294,7 +383,7 @@ export function makeRoute(world, ids, laneOffset) {
   const raw = [],
     crossings = [];
   const nodes = ids.map((id) => world.byId[id]);
-  const offset = (p, h) => move(p, h + Math.PI / 2, 3);
+  const offset = (p, h) => move(p, h + Math.PI / 2, 4.8);
   for (let i = 0; i < nodes.length; i++) {
     const p = nodes[i],
       hin = heading(nodes[Math.max(0, i - 1)], nodes[i === 0 ? 1 : i]),
@@ -317,18 +406,32 @@ export function makeRoute(world, ids, laneOffset) {
         const theta = (k / 24) * Math.PI;
         raw.push(
           move(
-            move(center, hin, Math.sin(theta) * 3),
+            move(center, hin, Math.sin(theta) * 4.8),
             hin + Math.PI / 2,
-            Math.cos(theta) * 3,
+            Math.cos(theta) * 4.8,
           ),
         );
       }
-    } else if (Math.abs(Math.sin(hout - hin)) < 0.1) {
+    } else if (Math.abs(Math.sin(hout - hin)) < 0.08) {
       raw.push(b);
     } else {
-      // Right-lane line intersection is the quadratic control point.
-      const c =
-        Math.abs(Math.sin(hin)) > 0.5 ? { x: b.x, z: a.z } : { x: a.x, z: b.z };
+      // Analytical quadratic bezier control point for arbitrary turn angle!
+      const sinDiff = Math.sin(hout - hin);
+      let c = null;
+      if (Math.abs(sinDiff) > 0.05) {
+        const dx = b.x - a.x,
+          dz = b.z - a.z;
+        const t = (dx * Math.cos(hout) + dz * Math.sin(hout)) / sinDiff;
+        if (t > 0 && t < 45) {
+          c = { x: a.x + t * Math.sin(hin), z: a.z - t * Math.cos(hin) };
+        }
+      }
+      if (!c) {
+        c =
+          Math.abs(Math.sin(hin)) > 0.5
+            ? { x: b.x, z: a.z }
+            : { x: a.x, z: b.z };
+      }
       for (let k = 1; k <= 16; k++) {
         const t = k / 16,
           u = 1 - t;
@@ -338,7 +441,15 @@ export function makeRoute(world, ids, laneOffset) {
         });
       }
     }
-    crossings.push({ nodeId: p.id, x: p.x, z: p.z, approach: hin, exit: hout });
+    if (p.control !== "none") {
+      crossings.push({
+        nodeId: p.id,
+        x: p.x,
+        z: p.z,
+        approach: hin,
+        exit: hout,
+      });
+    }
   }
   const points = samplePolyline(raw);
   for (const c of crossings) {

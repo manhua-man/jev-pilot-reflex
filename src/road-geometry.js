@@ -97,15 +97,28 @@ export function roadGeometry(world) {
         ]),
       );
     }
-    for (const n of world.nodes)
+    for (const n of world.nodes) {
+      const half = 10.05;
       surfaces.push(
         polygon([
-          { x: n.x - 6.05, z: n.z - 6.05 },
-          { x: n.x + 6.05, z: n.z - 6.05 },
-          { x: n.x + 6.05, z: n.z + 6.05 },
-          { x: n.x - 6.05, z: n.z + 6.05 },
+          { x: n.x - half, z: n.z - half },
+          { x: n.x + half, z: n.z - half },
+          { x: n.x + half, z: n.z + half },
+          { x: n.x - half, z: n.z + half },
         ]),
       );
+    }
+    for (const obj of world.objects || []) {
+      if (obj.type === "fork_gore" && obj.leftTarget && obj.rightTarget) {
+        surfaces.push(
+          polygon([
+            { x: obj.x, z: obj.z },
+            { x: obj.leftTarget.x, z: obj.leftTarget.z },
+            { x: obj.rightTarget.x, z: obj.rightTarget.z },
+          ]),
+        );
+      }
+    }
   }
   for (const road of world.connectorRoads || []) {
     const offset = (i, side) =>

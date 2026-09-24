@@ -1,7 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Manrope:wght@400;500;600;650;700;750&display=swap");
 :root {
   font:
-    13px "DM Sans",
+    13px system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
     sans-serif;
   color: #171a20;
   background: #e5e7eb;

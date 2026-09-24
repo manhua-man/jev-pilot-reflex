@@ -255,7 +255,7 @@ export function createDrivingPlan(
     : 0.85 * Math.min(1, 9 / Math.max(5, Math.abs(car.speed)));
 
   const laneHalfWidth =
-    section?.laneHalfWidth ?? (world.type === "highway" ? 2.25 : 3);
+    section?.laneHalfWidth ?? (world.type === "highway" ? 2.25 : 2.5);
   const laneMeasure = (pose) => {
     const n = nearestOnPath(pose, localRoute);
     const lateral =
