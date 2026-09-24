@@ -719,7 +719,7 @@ async function decide() {
     const controls = decisionControls(state, data);
     if (!controls) throw Error("Jev returned a mismatched candidate batch.");
     const now = performance.now();
-    if (now - started > 1800)
+    if (window.__USE_REMOTE_JEV__ && now - started > 3000)
       throw Error("Jev decision expired before it arrived. Replanning.");
     if (sim.decisionContextChanged(state)) {
       // A changed light or a newly completed stop needs another Jev decision.
