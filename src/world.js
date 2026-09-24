@@ -378,6 +378,16 @@ export function shortestPath(world, start, end, previousNode = null) {
   }
   return route;
 }
+export function makeForkRoute(world, branchChoice) {
+  const branchId = branchChoice === "right" ? "fork-right" : "fork-left";
+  const startId = world.startNode;
+  const forkId = "fork-junction";
+  if (!world.byId[forkId] || !world.byId[branchId]) {
+    return world.route;
+  }
+  const continuation = shortestPath(world, branchId, world.destination, forkId);
+  return makeRoute(world, [startId, forkId, ...continuation]);
+}
 export function makeRoute(world, ids, laneOffset) {
   if (world.type === "highway") return makeHighwayRoute(world, ids, laneOffset);
   const raw = [],

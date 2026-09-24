@@ -964,6 +964,18 @@ export class DriveScene {
     this.wheelDirection = Math.sign(this.sim.player.speed) || 1;
     this.scene.add(this.player);
     const playerGroup = this.player;
+    const amberMat = new THREE.MeshBasicMaterial({ color: "#f59e0b" });
+    const bGeo = new THREE.BoxGeometry(0.18, 0.12, 0.12);
+    this.blinkerLeft = new THREE.Mesh(bGeo, amberMat);
+    this.blinkerLeft.position.set(-0.85, 0.75, 2.1);
+    this.player.add(this.blinkerLeft);
+    this.blinkerLeft.visible = false;
+
+    this.blinkerRight = new THREE.Mesh(bGeo, amberMat);
+    this.blinkerRight.position.set(0.85, 0.75, 2.1);
+    this.player.add(this.blinkerRight);
+    this.blinkerRight.visible = false;
+
     const carReady = loadHeroCar()
       .then((model) => {
         if (this.player !== playerGroup || this.sim.crash) {
@@ -973,6 +985,8 @@ export class DriveScene {
         playerGroup.traverse((mesh) => mesh.geometry?.dispose());
         playerGroup.clear();
         playerGroup.add(model);
+        playerGroup.add(this.blinkerLeft);
+        playerGroup.add(this.blinkerRight);
         this.heroCar = model;
         playerGroup.userData.sourcedModel = true;
         playerGroup.userData.eyeHeight = model.userData.eyeHeight;
@@ -1190,8 +1204,17 @@ export class DriveScene {
         m.rotation.y = -p.heading;
       }
     }
+    const blinkOn = Math.floor(this.sim.time * 4) % 2 === 0;
+    if (this.blinkerLeft) this.blinkerLeft.visible = this.sim.blinker === "left" && blinkOn;
+    if (this.blinkerRight) this.blinkerRight.visible = this.sim.blinker === "right" && blinkOn;
+
     for (const p of this.sim.pedestrians) {
-      const m = this.people.get(p.id);
+      let m = this.people.get(p.id);
+      if (!m) {
+        m = personModel(p);
+        this.people.set(p.id, m);
+        this.scene.add(m);
+      }
       if (m) {
         m.position.set(
           p.x,
@@ -1312,6 +1335,7 @@ export class DriveScene {
       dt,
       this.sim.autopilot,
       this.sim.paused,
+      this.sim.aebActive,
     );
 
     if (draw) this.renderer.render(this.scene, this.camera);

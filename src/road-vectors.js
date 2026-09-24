@@ -176,7 +176,7 @@ export class RoadVectors {
     this.group.visible = false;
     this.layer.hidden = true;
   }
-  render(car, camera, width, height, dt, active, paused) {
+  render(car, camera, width, height, dt, active, paused, aebActive = false) {
     const age = paused ? 0 : performance.now() - this.received;
     const weights = active
       ? vectorWeights(this.answer, this.answeredPlan?.eligible, age)
@@ -213,8 +213,11 @@ export class RoadVectors {
       selectedPoints = displayed;
       updateRibbon(this.selected, displayed, 0.2, 0.25);
       updateRibbon(this.selectedGlow, displayed, 0.5, 0.195);
-      this.selected.material.uniforms.alpha.value = 0.9;
-      this.selectedGlow.material.uniforms.alpha.value = 0.15;
+      const ribbonColor = aebActive ? "#ef4444" : "#007aff";
+      this.selected.material.uniforms.tint.value.set(ribbonColor);
+      this.selectedGlow.material.uniforms.tint.value.set(ribbonColor);
+      this.selected.material.uniforms.alpha.value = aebActive ? 1.0 : 0.9;
+      this.selectedGlow.material.uniforms.alpha.value = aebActive ? 0.35 : 0.15;
       this.selected.renderOrder = 5;
     }
     for (const item of this.pool) {

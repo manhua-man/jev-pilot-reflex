@@ -1,6 +1,7 @@
 import {
   generateWorld,
   makeRoute,
+  makeForkRoute,
   shortestPath,
   signalState,
 } from "./world.js";
@@ -62,6 +63,12 @@ export class Simulation {
     this.pedals = { throttle: 0, brake: 0 };
     this.steeringInput = 0;
     this.brakeReason = null;
+    this.forkBranch = "left";
+    this.blinker = "none";
+    this.aebActive = false;
+    this.aebTimer = 0;
+    this.aebTTC = 5.0;
+    this.aebDecel = 0;
     this.complete = false;
     this.collisions = 0;
     this.crash = null;
@@ -495,6 +502,19 @@ export class Simulation {
         this.locks.delete(id);
     }
     for (const p of this.pedestrians) {
+      if (p.isJaywalker) {
+        const dx = p.targetX - p.x;
+        if (Math.abs(dx) > 0.4) {
+          p.x += Math.sign(dx) * p.speed * dt;
+          p.heading = Math.sign(dx) > 0 ? -Math.PI / 2 : Math.PI / 2;
+          p.walking = true;
+        } else {
+          p.isJaywalker = false;
+          p.speed = 0.8;
+          p.walking = false;
+        }
+        continue;
+      }
       const node = this.world.byId[p.nodeId],
         walk = signalState(node, this.time, 0).walk;
       if (p.crossing) {
@@ -604,6 +624,35 @@ export class Simulation {
           target = env.max;
           this.brakeReason = env.reason;
         }
+        if (env.conflict) {
+          this.aebTTC = env.conflict.time_s ?? 5.0;
+        } else {
+          this.aebTTC = 5.0;
+        }
+        const isEmergency =
+          (this.brakeReason && (
+            this.brakeReason.toLowerCase().includes("pedestrian") ||
+            this.brakeReason.toLowerCase().includes("clearance") ||
+            this.brakeReason.toLowerCase().includes("conflict")
+          )) || this.aebTTC < 1.6;
+
+        if (this.aebTimer > 0) {
+          this.aebTimer -= dt;
+        }
+        if (isEmergency && v.speed > 0.6) {
+          this.aebTimer = Math.max(this.aebTimer, 2.5);
+          this.aebDecel = -8.5;
+          target = 0;
+          this.pedals.brake = 1.0;
+          this.pedals.throttle = 0;
+        }
+        this.aebActive = this.aebTimer > 0;
+      }
+    }
+    if (this.blinker && this.blinker !== "none") {
+      const junction = this.world.byId["fork-junction"];
+      if (junction && v.z > junction.z + 28) {
+        this.blinker = "none";
       }
     }
     if (this.complete) target = 0;
@@ -1467,5 +1516,62 @@ export class Simulation {
         sensor_occluded_ids: occluded,
       };
     return obs;
+  }
+  setForkBranch(branch) {
+    this.forkBranch = branch;
+    const v = this.player;
+    const junction = this.world.byId["fork-junction"];
+    if (!junction) return false;
+    if (v.z < junction.z + 18) {
+      const newRoute = makeForkRoute(this.world, branch);
+      const near = nearestOnPath(v, newRoute.points);
+      this.blinker = branch;
+      this.installRoute({ route: newRoute, progress: near.s });
+      this.event(
+        branch === "left"
+          ? "导航分流: 已选择 ↖ 机场快速路 (开启左转向灯)"
+          : "导航分流: 已选择 ↗ 中心商务区 (开启右转向灯)",
+        "info"
+      );
+      return true;
+    }
+    return false;
+  }
+  triggerJaywalker() {
+    const v = this.player;
+    const forwardDist = 16.5;
+    const ahead = move(v, v.heading, forwardDist);
+    const fromLeft = Math.random() > 0.5;
+    const sideOffset = fromLeft ? -9.5 : 9.5;
+    const startP = move(ahead, v.heading + Math.PI / 2, sideOffset);
+    const targetP = move(ahead, v.heading + Math.PI / 2, -sideOffset);
+
+    const jaywalker = {
+      id: `jaywalker-${Math.floor(this.time * 1000)}`,
+      type: "pedestrian",
+      nodeId: this.world.startNode,
+      x: startP.x,
+      z: startP.z,
+      startX: startP.x,
+      targetX: targetP.x,
+      targetZ: startP.z,
+      speed: 5.2,
+      walking: true,
+      crossing: true,
+      isJaywalker: true,
+      width: 0.65,
+      depth: 0.65,
+      height: 1.7,
+      heading: fromLeft ? -Math.PI / 2 : Math.PI / 2,
+    };
+    this.pedestrians.push(jaywalker);
+    this.aebTimer = 3.2;
+    this.aebActive = true;
+    this.aebTTC = 0.8;
+    this.aebDecel = -8.5;
+    this.pedals.brake = 1.0;
+    this.pedals.throttle = 0;
+    this.event("⚠️ 突发盲区鬼探头！行人正突然全速横穿车道！", "error");
+    return jaywalker;
   }
 }

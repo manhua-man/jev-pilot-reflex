@@ -101,6 +101,12 @@ export function solveLocalJev(state) {
     usage: { input_tokens: 45, output_tokens: 15 },
     pricing: { input_per_million: 0.15, output_per_million: 0.60 },
     latency_ms: 1.5,
-    cost_usd: 0
+    cost_usd: 0,
+    telemetry: {
+      bestScore: Math.round(bestScore),
+      bestId,
+      shouldStop,
+      candidateCount: movingIds.length
+    }
   };
 }
