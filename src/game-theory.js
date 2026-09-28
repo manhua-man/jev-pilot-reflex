@@ -257,6 +257,74 @@ export class GameTrafficManager {
     return truck;
   }
 
+  triggerConstructionScenario() {
+    this.scenarioMode = "construction";
+    this.agents = [];
+    const player = this.sim.player;
+
+    const trailer = this.spawnAgent({
+      role: "construction_trailer",
+      relAhead: 36,
+      relRight: 2.2,
+      speed: 0,
+      aggressiveness: 0.1,
+      name: "施工导向车 (LED 箭头)",
+      color: "#f59e0b",
+    });
+    trailer.width = 2.4;
+    trailer.depth = 5.2;
+    trailer.statusText = "⬅ 道路施工 封闭收窄";
+
+    const oncoming = this.spawnAgent({
+      role: "construction_oncoming",
+      relAhead: 65,
+      relRight: -3.6,
+      speed: Math.max(9, player.speed * 0.9),
+      aggressiveness: 0.5,
+      name: "NPC-左侧慢车",
+      color: "#06b6d4",
+    });
+    oncoming.statusText = "左侧车道合流避让";
+
+    this.keyAdversary = trailer;
+    this.constructionState = {
+      stage: "approaching", // "approaching" | "taper_merging" | "bypassing" | "completed"
+      coneDistance: 36,
+      taperProgress: 0,
+    };
+
+    this.sim.event("🚧 触发道路施工占道与车道收窄博弈！前方右侧车道封闭，Reflex 规划向左侧净空车道汇流绕行", "warning");
+    return trailer;
+  }
+
+  triggerRoundaboutScenario() {
+    this.scenarioMode = "roundabout";
+    this.agents = [];
+    const player = this.sim.player;
+
+    const circulating = this.spawnAgent({
+      role: "roundabout_circulating",
+      relAhead: 19,
+      relRight: -2.5,
+      speed: 8.2, // ~30 km/h in roundabout
+      aggressiveness: 0.65,
+      name: "NPC-环内优先车",
+      color: "#3b82f6",
+    });
+    circulating.blinker = "left";
+    circulating.statusText = "⟳ 环内循环行驶 (路权优先)";
+
+    this.keyAdversary = circulating;
+    this.roundaboutState = {
+      stage: "approaching_yield", // "approaching_yield" | "yielding" | "entering" | "circulating" | "exiting"
+      gap: 19,
+      cooperationScore: 96,
+    };
+
+    this.sim.event("⟳ 触发环岛无信号交叉通行博弈 (Roundabout)！评估环内路权与交织间隙，执行入环礼让", "warning");
+    return circulating;
+  }
+
   update(dt) {
     if (!this.swarmActive || this.sim.paused || this.sim.crash) return;
     const player = this.sim.player;
@@ -271,6 +339,18 @@ export class GameTrafficManager {
     if (this.scenarioMode === "truck_overtake") {
       this.updateTruckTraffic(player, dt, roadSpeedLimit);
       this.payoffMatrix = this.evaluateTruckPayoffMatrix(player);
+      return;
+    }
+
+    if (this.scenarioMode === "construction") {
+      this.updateConstructionTraffic(player, dt, roadSpeedLimit);
+      this.payoffMatrix = this.evaluateConstructionPayoffMatrix(player);
+      return;
+    }
+
+    if (this.scenarioMode === "roundabout") {
+      this.updateRoundaboutTraffic(player, dt, roadSpeedLimit);
+      this.payoffMatrix = this.evaluateRoundaboutPayoffMatrix(player);
       return;
     }
 
@@ -1098,6 +1178,220 @@ export class GameTrafficManager {
       return `🎉 大货车借道超车顺利完成！自车重获 100% 前向高清视距，恢复标称巡航。`;
     }
     return `Reflex 监控重型货车遮挡博弈流，维持最优博弈均衡。`;
+  }
+
+  updateConstructionTraffic(player, dt, speedLimit) {
+    const trailer = this.agents.find(a => a.role === "construction_trailer");
+    if (!trailer) return;
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+    const dx = trailer.x - player.x;
+    const dz = trailer.z - player.z;
+    const relAhead = dx * sinH - dz * cosH;
+    trailer.gap = relAhead;
+
+    if (this.constructionState) {
+      this.constructionState.coneDistance = Math.max(0, relAhead);
+      if (this.constructionState.stage === "approaching" && relAhead < 25) {
+        this.constructionState.stage = "taper_merging";
+        player.blinker = "left";
+      } else if (this.constructionState.stage === "taper_merging" && relAhead < 8) {
+        this.constructionState.stage = "bypassing";
+      } else if (this.constructionState.stage === "bypassing" && relAhead < -6) {
+        this.constructionState.stage = "completed";
+        player.blinker = "none";
+        this.sim.event("✔ 道路施工收窄管控区顺利通过！恢复标称车道巡航", "success");
+      }
+    }
+  }
+
+  evaluateConstructionPayoffMatrix(player) {
+    const trailer = this.keyAdversary || this.agents[0];
+    const relAhead = trailer ? trailer.gap : 30;
+    const stage = this.constructionState?.stage || "approaching";
+
+    const rows = [
+      {
+        id: "keep_lane",
+        name: "保持原车道·直冲施工区",
+        jSafe: 12.0,
+        jEff: 10.0,
+        jComf: 20.0,
+        expectedU: 13.5,
+        status: "❌ 严禁冲撞施工锥桶",
+      },
+      {
+        id: "yield_decel",
+        name: "阶梯降速·安全接近",
+        jSafe: 88.0,
+        jEff: 62.0,
+        jComf: 86.0,
+        expectedU: 79.5,
+        status: "降速预备变道",
+      },
+      {
+        id: "overtake_left",
+        name: "向左变道·锥桶导向绕行",
+        jSafe: 93.5,
+        jEff: 95.0,
+        jComf: 82.0,
+        expectedU: 91.8,
+        isBest: true,
+        status: "⭐ 施工收窄最优变道解",
+      },
+      {
+        id: "evade_right",
+        name: "向右盲切·路肩避让",
+        jSafe: 15.0,
+        jEff: 40.0,
+        jComf: 50.0,
+        expectedU: 28.5,
+        status: "❌ 右侧护栏死角阻隔",
+      },
+      {
+        id: "aeb_stop",
+        name: "紧急刹停·物理避碰",
+        jSafe: 96.0,
+        jEff: 5.0,
+        jComf: 20.0,
+        expectedU: 58.0,
+        status: "极度迫近安全兜底",
+      },
+    ];
+
+    return {
+      mode: "construction",
+      constructionState: {
+        stage,
+        coneDistance: round(this.constructionState?.coneDistance || 30, 1),
+        tokens: [
+          { id: "warn", label: "前方施工", sub: "提前 35m 预警", status: stage === "approaching" ? "active" : "done" },
+          { id: "taper", label: "锥桶渐变", sub: "引导向左收缩", status: stage === "taper_merging" ? "active" : (stage === "approaching" ? "wait" : "done") },
+          { id: "bypass", label: "净空借道", sub: "单道受控通过", status: stage === "bypassing" ? "active" : (stage === "completed" ? "done" : "wait") },
+          { id: "resume", label: "恢复标称", sub: "驶离施工管控", status: stage === "completed" ? "done" : "wait" },
+        ],
+      },
+      adversary: {
+        id: trailer.id,
+        name: trailer.name,
+        role: trailer.role,
+        statusText: trailer.statusText,
+        aggressiveness: 0.1,
+        gap: round(relAhead, 1),
+        lateralGap: 2.2,
+        ttc: 9.9,
+        pCommit: 100,
+      },
+      rows,
+      bestAction: rows[2],
+      decisionRationale: `前方 35m 识别道路施工与反光锥桶收窄路障，Reflex 纳什均衡选择 [向左变道·锥桶导向绕行] (期望收益 91.8)，平滑合流入左侧通行车道。`,
+    };
+  }
+
+  updateRoundaboutTraffic(player, dt, speedLimit) {
+    const circulating = this.agents.find(a => a.role === "roundabout_circulating");
+    if (!circulating) return;
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+    const dx = circulating.x - player.x;
+    const dz = circulating.z - player.z;
+    const relAhead = dx * sinH - dz * cosH;
+    circulating.gap = relAhead;
+
+    if (this.roundaboutState) {
+      this.roundaboutState.gap = Math.max(0, relAhead);
+      if (this.roundaboutState.stage === "approaching_yield" && relAhead < 14) {
+        this.roundaboutState.stage = "yielding";
+        circulating.statusText = "环内优先通过 ✔";
+      } else if (this.roundaboutState.stage === "yielding" && relAhead < 5) {
+        this.roundaboutState.stage = "entering";
+        player.blinker = "left";
+      } else if (this.roundaboutState.stage === "entering" && relAhead < -6) {
+        this.roundaboutState.stage = "exiting";
+        player.blinker = "right";
+        this.sim.event("✔ 顺位切入环岛并顺利出环！博弈通行协同度 100%", "success");
+      }
+    }
+  }
+
+  evaluateRoundaboutPayoffMatrix(player) {
+    const circulating = this.keyAdversary || this.agents[0];
+    const relAhead = circulating ? circulating.gap : 19;
+    const stage = this.roundaboutState?.stage || "approaching_yield";
+
+    const rows = [
+      {
+        id: "yield_entry",
+        name: "入环礼让·让行环内车辆",
+        jSafe: 96.0,
+        jEff: 82.0,
+        jComf: 92.0,
+        expectedU: 91.2,
+        isBest: stage === "approaching_yield" || stage === "yielding",
+        status: "⭐ 环岛路权纳什最优解",
+      },
+      {
+        id: "force_entry",
+        name: "强行抢冲·挤占环岛流",
+        jSafe: 22.0,
+        jEff: 85.0,
+        jComf: 35.0,
+        expectedU: 29.8,
+        status: "❌ 诱发环内垂直碰撞",
+      },
+      {
+        id: "merge_circle",
+        name: "间隙就位·顺畅汇入环流",
+        jSafe: 90.0,
+        jEff: 92.0,
+        jComf: 88.0,
+        expectedU: 90.2,
+        isBest: stage === "entering" || stage === "exiting",
+        status: "环隙充足切入",
+      },
+      {
+        id: "exit_roundabout",
+        name: "打右转向灯·顺位驶出",
+        jSafe: 94.0,
+        jEff: 95.0,
+        jComf: 90.0,
+        expectedU: 93.6,
+        isBest: stage === "exiting",
+        status: "顺畅出环恢复巡航",
+      },
+    ];
+
+    let bestIndex = 0;
+    if (stage === "entering") bestIndex = 2;
+    else if (stage === "exiting") bestIndex = 3;
+
+    return {
+      mode: "roundabout",
+      roundaboutState: {
+        stage,
+        gap: round(this.roundaboutState?.gap || 19, 1),
+        tokens: [
+          { id: "approach", label: "接近环岛", sub: "减速观察环流", status: stage === "approaching_yield" ? "active" : "done" },
+          { id: "yield", label: "入环让行", sub: "环内优先通行", status: stage === "yielding" ? "active" : (stage === "approaching_yield" ? "wait" : "done") },
+          { id: "enter", label: "间隙切入", sub: "开左灯顺畅入环", status: stage === "entering" ? "active" : (stage === "exiting" ? "done" : "wait") },
+          { id: "exit", label: "打灯出环", sub: "开右灯脱离环岛", status: stage === "exiting" ? "done" : "wait" },
+        ],
+      },
+      adversary: {
+        id: circulating.id,
+        name: circulating.name,
+        role: circulating.role,
+        statusText: circulating.statusText,
+        aggressiveness: 0.65,
+        gap: round(relAhead, 1),
+        lateralGap: -2.5,
+        ttc: 9.9,
+        pCommit: 90,
+      },
+      rows,
+      bestAction: rows[bestIndex],
+      decisionRationale: `接近无信号环形交叉路口，Reflex 识别环内循环车辆享优先路权，纳什均衡执行 [入环礼让] (期望收益 91.2)，待环流空隙形成后平滑汇入。`,
+    };
   }
 }
 

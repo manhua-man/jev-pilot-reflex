@@ -315,8 +315,10 @@ function makeBadgeTexture(text, role) {
   canvas.height = 96;
   const ctx = canvas.getContext("2d");
   const borderColor =
-    role === "truck"
+    role === "truck" || role === "construction"
       ? "#f97316"
+      : role === "roundabout"
+      ? "#3b82f6"
       : role === "cut_in" || role === "zipper_r2"
       ? "#f59e0b"
       : role === "overtake" || role === "truck_oncoming"
@@ -1316,6 +1318,47 @@ export class DriveScene {
 
     this.truckOcclusionGroup.visible = false;
     this.scene.add(this.truckOcclusionGroup);
+
+    // Construction Zone 3D Group (Traffic cones taper & LED Arrow trailer)
+    this.constructionGroup = new THREE.Group();
+    this.coneMeshes = [];
+    for (let i = 0; i < 7; i++) {
+      const coneSub = new THREE.Group();
+      box(coneSub, 0.45, 0.05, 0.45, 0, 0.025, 0, "#0f172a");
+      cyl(coneSub, 0.18, 0.75, 0, 0.40, 0, "#f97316", 12);
+      cyl(coneSub, 0.185, 0.18, 0, 0.42, 0, "#f8fafc", 12);
+      this.constructionGroup.add(coneSub);
+      this.coneMeshes.push(coneSub);
+    }
+    this.arrowTrailerGroup = new THREE.Group();
+    box(this.arrowTrailerGroup, 2.2, 0.4, 3.8, 0, 0.35, 0, "#eab308");
+    box(this.arrowTrailerGroup, 2.0, 1.4, 0.15, 0, 1.6, 0.5, "#0f172a");
+    this.constructionBadgeData = makeBadgeTexture("🚧 道路施工占道 · 反光锥桶导向", "construction");
+    const constBadgeMat = new THREE.SpriteMaterial({ map: this.constructionBadgeData.texture, transparent: true, depthTest: false });
+    this.constructionBadgeSprite = new THREE.Sprite(constBadgeMat);
+    this.constructionBadgeSprite.scale.set(4.6, 1.15, 1);
+    this.constructionBadgeSprite.position.set(0, 2.8, 0.5);
+    this.arrowTrailerGroup.add(this.constructionBadgeSprite);
+    this.constructionGroup.add(this.arrowTrailerGroup);
+    this.constructionGroup.visible = false;
+    this.scene.add(this.constructionGroup);
+
+    // Roundabout 3D Guidance Group
+    this.roundaboutGroup = new THREE.Group();
+    const yieldRingGeo = new THREE.RingGeometry(2.5, 3.2, 32);
+    this.roundaboutRingMat = new THREE.MeshBasicMaterial({ color: "#3b82f6", side: THREE.DoubleSide, transparent: true, opacity: 0.65 });
+    const yieldRing = new THREE.Mesh(yieldRingGeo, this.roundaboutRingMat);
+    yieldRing.rotation.x = -Math.PI / 2;
+    yieldRing.position.y = 0.08;
+    this.roundaboutGroup.add(yieldRing);
+    this.roundaboutBadgeData = makeBadgeTexture("⫳ 环岛让行线 · 环内车辆优先", "roundabout");
+    const rbBadgeMat = new THREE.SpriteMaterial({ map: this.roundaboutBadgeData.texture, transparent: true, depthTest: false });
+    this.roundaboutBadgeSprite = new THREE.Sprite(rbBadgeMat);
+    this.roundaboutBadgeSprite.scale.set(4.6, 1.15, 1);
+    this.roundaboutBadgeSprite.position.set(0, 2.2, 0);
+    this.roundaboutGroup.add(this.roundaboutBadgeSprite);
+    this.roundaboutGroup.visible = false;
+    this.scene.add(this.roundaboutGroup);
     const vertices = [0, 0.18, 0];
     for (let k = 0; k <= 40; k++) {
       const a = ((-65 + (k * 130) / 40) * Math.PI) / 180;
@@ -1674,6 +1717,50 @@ export class DriveScene {
       }
     } else if (this.truckOcclusionGroup) {
       this.truckOcclusionGroup.visible = false;
+    }
+
+    // Construction Zone 3D Animation & Placement
+    if (this.sim.gameManager?.scenarioMode === "construction" && this.constructionGroup) {
+      const trailer = this.sim.gameManager.agents.find((a) => a.role === "construction_trailer");
+      if (trailer) {
+        this.constructionGroup.visible = true;
+        this.arrowTrailerGroup.position.set(trailer.x, 0, trailer.z);
+        this.arrowTrailerGroup.rotation.y = -trailer.heading;
+
+        const fX = Math.sin(v.heading);
+        const fZ = -Math.cos(v.heading);
+        const rX = Math.cos(v.heading);
+        const rZ = Math.sin(v.heading);
+
+        // Position 7 cones along the taper between car right edge and trailer
+        for (let i = 0; i < 7; i++) {
+          const t = i / 6;
+          const coneDist = trailer.gap * 0.15 + t * (trailer.gap * 0.75);
+          const coneOffset = 3.6 - t * 1.4;
+          const cx = v.x + fX * coneDist + rX * coneOffset;
+          const cz = v.z + fZ * coneDist + rZ * coneOffset;
+          this.coneMeshes[i].position.set(cx, 0, cz);
+        }
+      } else {
+        this.constructionGroup.visible = false;
+      }
+    } else if (this.constructionGroup) {
+      this.constructionGroup.visible = false;
+    }
+
+    // Roundabout 3D Animation & Placement
+    if (this.sim.gameManager?.scenarioMode === "roundabout" && this.roundaboutGroup) {
+      const circulating = this.sim.gameManager.agents.find((a) => a.role === "roundabout_circulating");
+      if (circulating) {
+        this.roundaboutGroup.visible = true;
+        this.roundaboutGroup.position.set(circulating.x, 0, circulating.z);
+        const pulse = 0.5 + 0.3 * Math.sin(performance.now() * 0.006);
+        this.roundaboutRingMat.opacity = pulse;
+      } else {
+        this.roundaboutGroup.visible = false;
+      }
+    } else if (this.roundaboutGroup) {
+      this.roundaboutGroup.visible = false;
     }
 
     // Dynamic Rain Particles Falling

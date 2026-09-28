@@ -73,6 +73,9 @@ export class Simulation {
     this.weather = "clear";
     this.roadFriction = 0.90;
     this.complete = false;
+    this.endlessCruising = true;
+    this.stageLeg = 1;
+    this.lastLegAdvance = -Infinity;
     this.collisions = 0;
     this.crash = null;
     this.violations = 0;
@@ -449,7 +452,7 @@ export class Simulation {
         reason = rule.reason;
       }
     }
-    if (v === this.player && !this.freeExplore) {
+    if (v === this.player && !this.freeExplore && !this.endlessCruising) {
       const distance = Math.max(0, v.route.length - v.s);
       const destinationCap = Math.sqrt(2 * 5 * Math.max(0, distance - 1.5));
       if (destinationCap < max) {
@@ -752,7 +755,12 @@ export class Simulation {
         }
       }
     }
-    if (
+    if (this.endlessCruising) {
+      const remainingDist = Math.max(0, v.route.length - v.s);
+      if (remainingDist < 35 && this.time - this.lastLegAdvance > 4) {
+        this.appendNextLeg();
+      }
+    } else if (
       !this.complete &&
       !this.freeExplore &&
       dist(v, v.route.points.at(-1)) < 3 &&
@@ -1604,8 +1612,66 @@ export class Simulation {
     if (!this.gameManager) return null;
     return this.gameManager.triggerZipperMerge();
   }
-  triggerTruckScenario() {
+  triggerConstruction() {
     if (!this.gameManager) return null;
-    return this.gameManager.triggerTruckScenario();
+    return this.gameManager.triggerConstructionScenario();
+  }
+  triggerRoundabout() {
+    if (!this.gameManager) return null;
+    return this.gameManager.triggerRoundaboutScenario();
+  }
+  toggleEndlessCruising() {
+    this.endlessCruising = !this.endlessCruising;
+    if (this.endlessCruising) {
+      this.complete = false;
+      this.event("∞ 无尽巡航已激活：自车将连续跨片区接力巡航，永不停滞！", "success");
+      const remainingDist = Math.max(0, this.player.route.length - this.player.s);
+      if (remainingDist < 35) this.appendNextLeg();
+    } else {
+      this.event("定点导航已激活：自车将在当前航段终点平稳制动停靠", "info");
+    }
+    return this.endlessCruising;
+  }
+  appendNextLeg() {
+    if (this.time - this.lastLegAdvance < 4) return;
+    this.lastLegAdvance = this.time;
+    const v = this.player;
+    const curDestId = this.destinationApproach?.[1] || this.world.destination;
+    const curDestNode = this.world.byId[curDestId];
+    if (!curDestNode) return;
+
+    // Pick next destination far enough away (> 100m)
+    const candidates = this.world.nodes.filter(
+      (n) => n.id !== curDestId && dist(n, curDestNode) > 100 && n.neighbors.length > 0
+    );
+    const nextDest = choose(this.r, candidates.length > 0 ? candidates : this.world.nodes);
+
+    try {
+      const prevNode = this.destinationApproach?.[0] || null;
+      const pathIds = shortestPath(this.world, curDestId, nextDest.id, prevNode);
+      const legRoute = makeRoute(this.world, pathIds);
+      if (legRoute && legRoute.points.length > 1) {
+        const lastPt = v.route.points.at(-1);
+        const startOffset = lastPt.s;
+        for (let i = 1; i < legRoute.points.length; i++) {
+          const pt = legRoute.points[i];
+          v.route.points.push({
+            x: pt.x,
+            z: pt.z,
+            s: startOffset + pt.s,
+          });
+        }
+        v.route.length = v.route.points.at(-1).s;
+        v.route.ids = [...v.route.ids, ...pathIds.slice(1)];
+        this.world.destination = nextDest.id;
+        this.destinationApproach = pathIds.slice(-2);
+        this.destinationPoint = { ...v.route.points.at(-1) };
+        this.routeVersion++;
+        this.stageLeg = (this.stageLeg || 1) + 1;
+        this.event(`∞ 无尽巡航：打卡第 ${this.stageLeg - 1} 赛段！已无缝接力规划第 ${this.stageLeg} 赛段 ➔ [${nextDest.id}]`, "success");
+      }
+    } catch (e) {
+      console.warn("Failed to append infinite leg:", e);
+    }
   }
 }

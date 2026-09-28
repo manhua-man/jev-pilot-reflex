@@ -307,9 +307,11 @@ export function generateWorld(seed, type = "town") {
   };
   const clearObjects = objects.filter(
     (o) => {
-      if (o.type === "building" || o.type === "tree") {
+      if (o.type === "building" || o.type === "tree" || o.type === "stop_sign" || o.type === "traffic_light" || o.type === "bench") {
         for (const e of edges) {
-          const buffer = o.type === "building" ? Math.max(o.width, o.depth) / 2 + 2.0 : 2.5;
+          const buffer = o.type === "building" 
+            ? Math.max(o.width, o.depth) / 2 + 2.0 
+            : (o.type === "tree" ? 2.5 : 0.6);
           if (distToEdge(o, e) < e.width / 2 + buffer) return false;
         }
       }
