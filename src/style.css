@@ -2139,3 +2139,30 @@ body.crashed .world-picker {
   0% { transform: scale(1); }
   100% { transform: scale(1.02); }
 }
+
+/* Dataset Recorder & Neural Policy Controls */
+.dock-btn.rec-btn.recording {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  color: #ef4444 !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.6) !important;
+  animation: recPulse 1s infinite alternate;
+}
+.dock-btn.rec-btn.recording svg {
+  color: #ef4444;
+  fill: #ef4444;
+}
+@keyframes recPulse {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.04); opacity: 0.88; }
+}
+
+.dock-btn.neural-btn.active {
+  background: rgba(168, 85, 247, 0.25) !important;
+  border-color: rgba(168, 85, 247, 0.8) !important;
+  color: #c084fc !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.5) !important;
+}
+.dock-btn.neural-btn.active svg {
+  color: #c084fc;
+}
