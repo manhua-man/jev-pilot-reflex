@@ -60,8 +60,10 @@ export function steeringForCurvature(curvature, speed) {
   );
 }
 
-export function physics(car, steer, target, dt) {
-  car.speed += clamp(target - car.speed, -BRAKING * dt, ACCELERATION * dt);
+export function physics(car, steer, target, dt, friction = 1.0) {
+  const maxBraking = BRAKING * Math.max(0.4, friction);
+  const maxAcc = ACCELERATION * Math.max(0.5, Math.min(1.0, friction + 0.1));
+  car.speed += clamp(target - car.speed, -maxBraking * dt, maxAcc * dt);
   const actual = car.wheelSteering ?? car.steering ?? 0;
   car.wheelSteering = actual + clamp(steer - actual, -1.8 * dt, 1.8 * dt);
   integratePose(car, car.wheelSteering, dt);
@@ -70,19 +72,20 @@ export function physics(car, steer, target, dt) {
 
 // Free play uses pedals. Rolling resistance, engine braking, and aerodynamic
 // drag slow a released accelerator without an artificial target-speed lock.
-export function pedalPhysics(car, steer, throttle, brake, dt) {
+export function pedalPhysics(car, steer, throttle, brake, dt, friction = 1.0) {
   throttle = clamp(throttle, -1, 1);
   brake = clamp(brake, 0, 1);
   const speed = Math.abs(car.speed);
   const resistance =
     0.18 + 0.0017 * speed * speed + (Math.abs(throttle) < 0.01 ? 0.32 : 0);
   const opposingPedal = throttle * car.speed < -0.01;
-  const braking = brake * 11 + (opposingPedal ? Math.abs(throttle) * 8 : 0);
+  const f = Math.max(0.4, friction);
+  const braking = (brake * 11 + (opposingPedal ? Math.abs(throttle) * 8 : 0)) * f;
   if (brake || opposingPedal || !throttle) {
     car.speed =
       Math.sign(car.speed) * Math.max(0, speed - (resistance + braking) * dt);
   } else {
-    const acceleration = throttle * (throttle < 0 ? 2.5 : 5);
+    const acceleration = throttle * (throttle < 0 ? 2.5 : 5) * Math.min(1.0, f + 0.1);
     car.speed +=
       (acceleration - Math.sign(car.speed || throttle) * resistance) * dt;
     car.speed = clamp(car.speed, -3, 34);

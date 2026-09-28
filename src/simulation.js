@@ -69,6 +69,8 @@ export class Simulation {
     this.aebTimer = 0;
     this.aebTTC = 5.0;
     this.aebDecel = 0;
+    this.weather = "clear";
+    this.roadFriction = 0.90;
     this.complete = false;
     this.collisions = 0;
     this.crash = null;
@@ -661,7 +663,7 @@ export class Simulation {
       const steering = v.maneuver
         ? maneuverSteering(v, v.maneuver)
         : v.steering;
-      physics(v, steering, target, dt);
+      physics(v, steering, target, dt, this.roadFriction);
     } else
       pedalPhysics(
         v,
@@ -669,6 +671,7 @@ export class Simulation {
         this.pedals.throttle,
         this.pedals.brake,
         dt,
+        this.roadFriction,
       );
     v.x = clamp(v.x, this.world.bounds.minX, this.world.bounds.maxX);
     v.z = clamp(v.z, this.world.bounds.minZ, this.world.bounds.maxZ);
@@ -1573,5 +1576,19 @@ export class Simulation {
     this.pedals.throttle = 0;
     this.event("⚠️ 突发盲区鬼探头！行人正突然全速横穿车道！", "error");
     return jaywalker;
+  }
+  setWeather(mode) {
+    this.weather = mode;
+    if (mode === "rain") {
+      this.roadFriction = 0.52;
+      this.event("气象切换: 暴雨湿滑路面 (摩擦系数 μ=0.52，制动距离延长)", "info");
+    } else if (mode === "night") {
+      this.roadFriction = 0.70;
+      this.event("气象切换: 暗夜视距受限 (开启双前大灯与毫米波雷达流形)", "info");
+    } else {
+      this.roadFriction = 0.90;
+      this.event("气象切换: 标称晴朗干燥 (摩擦系数 μ=0.90)", "info");
+    }
+    return this.weather;
   }
 }

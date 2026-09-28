@@ -1764,3 +1764,50 @@ body.crashed .world-picker {
 .vlm-indicator.sync {
   color: #c084fc;
 }
+
+/* ==========================================================================
+   Weather Mode Picker & Audio Controls
+   ========================================================================== */
+
+.weather-picker {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  height: 28px;
+  margin-right: 4px;
+}
+.weather-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+.weather-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+.weather-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 6px rgba(2, 132, 199, 0.35);
+}
+
+#audio-toggle.muted {
+  color: #94a3b8;
+  opacity: 0.65;
+}
+#audio-toggle:not(.muted) {
+  color: #0284c7;
+}

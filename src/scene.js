@@ -406,6 +406,8 @@ export class DriveScene {
     const environmentReady = daylightEnvironment()
       .then((texture) => {
         if (this.scene !== builtScene) return;
+        this.daylightTexture = texture;
+        if (this.weatherMode === "rain" || this.weatherMode === "night") return;
         builtScene.environment = builtScene.background = texture;
         builtScene.environmentIntensity = 0.6;
         builtScene.backgroundIntensity = 0.8;
@@ -414,9 +416,11 @@ export class DriveScene {
       .catch((error) =>
         console.warn("Daylight environment unavailable", error),
       );
+    this.weatherMode = "clear";
     this.scene.background = new THREE.Color("#b7c9db");
     this.scene.fog = new THREE.Fog("#b7c6d0", 230, 1050);
-    this.scene.add(new THREE.HemisphereLight("#d5e4f8", "#4e503a", 0.4));
+    this.hemiLight = new THREE.HemisphereLight("#d5e4f8", "#4e503a", 0.4);
+    this.scene.add(this.hemiLight);
     this.sun = new THREE.DirectionalLight("#fff0d9", 3.4);
     this.sun.position.set(-60, 110, 40);
     this.sun.castShadow = true;
@@ -437,6 +441,34 @@ export class DriveScene {
     this.sun.shadow.radius = 2;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
+
+    // Weather Rain Particle System (暴雨动态粒子流)
+    this.rainGroup = new THREE.Group();
+    const rainCount = 1800;
+    const rainGeo = new THREE.BufferGeometry();
+    const rainPos = new Float32Array(rainCount * 6);
+    for (let i = 0; i < rainCount; i++) {
+      const rx = (Math.random() - 0.5) * 80;
+      const ry = Math.random() * 30;
+      const rz = (Math.random() - 0.5) * 80;
+      rainPos[i * 6 + 0] = rx;
+      rainPos[i * 6 + 1] = ry;
+      rainPos[i * 6 + 2] = rz;
+      rainPos[i * 6 + 3] = rx;
+      rainPos[i * 6 + 4] = ry - 0.75;
+      rainPos[i * 6 + 5] = rz;
+    }
+    rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+    const rainMat = new THREE.LineBasicMaterial({
+      color: "#93c5fd",
+      transparent: true,
+      opacity: 0.65,
+    });
+    this.rainLines = new THREE.LineSegments(rainGeo, rainMat);
+    this.rainGroup.add(this.rainLines);
+    this.rainGroup.visible = false;
+    this.scene.add(this.rainGroup);
+
     const world = this.sim.world;
     this.vegetation = new Vegetation(this.scene, world);
     this.static = new THREE.Group();
@@ -976,6 +1008,53 @@ export class DriveScene {
     this.player.add(this.blinkerRight);
     this.blinkerRight.visible = false;
 
+    // Vehicle Dual Front Headlights (前大灯聚光锥与发光透镜)
+    this.headlights = new THREE.Group();
+    this.headlightTarget = new THREE.Object3D();
+    this.headlightTarget.position.set(0, 0.1, 45);
+    this.player.add(this.headlightTarget);
+
+    const leftSpot = new THREE.SpotLight("#f8fafc", 16, 75, Math.PI / 6, 0.45, 1.4);
+    leftSpot.position.set(-0.68, 0.72, 2.15);
+    leftSpot.target = this.headlightTarget;
+    this.headlights.add(leftSpot);
+
+    const rightSpot = new THREE.SpotLight("#f8fafc", 16, 75, Math.PI / 6, 0.45, 1.4);
+    rightSpot.position.set(0.68, 0.72, 2.15);
+    rightSpot.target = this.headlightTarget;
+    this.headlights.add(rightSpot);
+
+    const lensGeo = new THREE.BoxGeometry(0.2, 0.08, 0.08);
+    const lensMat = new THREE.MeshBasicMaterial({ color: "#f8fafc" });
+    const leftLens = new THREE.Mesh(lensGeo, lensMat);
+    leftLens.position.set(-0.68, 0.72, 2.15);
+    this.headlights.add(leftLens);
+
+    const rightLens = new THREE.Mesh(lensGeo, lensMat);
+    rightLens.position.set(0.68, 0.72, 2.15);
+    this.headlights.add(rightLens);
+
+    this.player.add(this.headlights);
+    this.headlights.visible = false;
+
+    // Tail Brake Lights (红色尾灯与高位刹车灯)
+    this.tailLights = new THREE.Group();
+    const tailGeo = new THREE.BoxGeometry(0.24, 0.08, 0.08);
+    this.tailMat = new THREE.MeshBasicMaterial({ color: "#7f1d1d" });
+    const leftTail = new THREE.Mesh(tailGeo, this.tailMat);
+    leftTail.position.set(-0.72, 0.85, -2.15);
+    this.tailLights.add(leftTail);
+
+    const rightTail = new THREE.Mesh(tailGeo, this.tailMat);
+    rightTail.position.set(0.72, 0.85, -2.15);
+    this.tailLights.add(rightTail);
+
+    this.brakePointLight = new THREE.PointLight("#ff0022", 0.01, 10, 2);
+    this.brakePointLight.position.set(0, 0.85, -2.35);
+    this.tailLights.add(this.brakePointLight);
+
+    this.player.add(this.tailLights);
+
     const carReady = loadHeroCar()
       .then((model) => {
         if (this.player !== playerGroup || this.sim.crash) {
@@ -987,6 +1066,9 @@ export class DriveScene {
         playerGroup.add(model);
         playerGroup.add(this.blinkerLeft);
         playerGroup.add(this.blinkerRight);
+        playerGroup.add(this.headlights);
+        playerGroup.add(this.headlightTarget);
+        playerGroup.add(this.tailLights);
         this.heroCar = model;
         playerGroup.userData.sourcedModel = true;
         playerGroup.userData.eyeHeight = model.userData.eyeHeight;
@@ -1208,6 +1290,42 @@ export class DriveScene {
     if (this.blinkerLeft) this.blinkerLeft.visible = this.sim.blinker === "left" && blinkOn;
     if (this.blinkerRight) this.blinkerRight.visible = this.sim.blinker === "right" && blinkOn;
 
+    // Dynamic Rain Particles Falling
+    if (this.rainGroup && this.rainGroup.visible) {
+      this.rainGroup.position.set(v.x, 0, v.z);
+      const pos = this.rainLines.geometry.attributes.position.array;
+      const count = pos.length / 6;
+      for (let i = 0; i < count; i++) {
+        pos[i * 6 + 1] -= 38 * dt;
+        pos[i * 6 + 4] -= 38 * dt;
+        if (pos[i * 6 + 1] < 0.2) {
+          const rx = (Math.random() - 0.5) * 80;
+          const ry = 28 + Math.random() * 6;
+          const rz = (Math.random() - 0.5) * 80;
+          pos[i * 6 + 0] = rx;
+          pos[i * 6 + 1] = ry;
+          pos[i * 6 + 2] = rz;
+          pos[i * 6 + 3] = rx;
+          pos[i * 6 + 4] = ry - 0.75;
+          pos[i * 6 + 5] = rz;
+        }
+      }
+      this.rainLines.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // Dynamic Tail Brake Lights Glow
+    const braking = (this.sim.pedals.brake > 0.05 || this.sim.aebActive);
+    if (this.tailMat) {
+      const isNight = this.sim.weather === "night";
+      if (braking) {
+        this.tailMat.color.set("#ff1122");
+        if (this.brakePointLight) this.brakePointLight.intensity = 5.5;
+      } else {
+        this.tailMat.color.set(isNight ? "#991b1b" : "#450a0a");
+        if (this.brakePointLight) this.brakePointLight.intensity = isNight ? 0.35 : 0.001;
+      }
+    }
+
     for (const p of this.sim.pedestrians) {
       let m = this.people.get(p.id);
       if (!m) {
@@ -1339,5 +1457,44 @@ export class DriveScene {
     );
 
     if (draw) this.renderer.render(this.scene, this.camera);
+  }
+  setWeather(mode) {
+    this.weatherMode = mode;
+    if (mode === "rain") {
+      this.scene.background = new THREE.Color("#273549");
+      this.scene.environment = null;
+      this.scene.fog = new THREE.Fog("#273549", 25, 220);
+      this.sun.intensity = 0.9;
+      this.sun.color.set("#94a3b8");
+      this.hemiLight.intensity = 0.22;
+      this.hemiLight.color.set("#64748b");
+      if (this.rainGroup) this.rainGroup.visible = true;
+      if (this.headlights) this.headlights.visible = true;
+    } else if (mode === "night") {
+      this.scene.background = new THREE.Color("#070b14");
+      this.scene.environment = null;
+      this.scene.fog = new THREE.Fog("#070b14", 12, 140);
+      this.sun.intensity = 0.05;
+      this.sun.color.set("#38bdf8");
+      this.hemiLight.intensity = 0.06;
+      this.hemiLight.color.set("#1e293b");
+      if (this.rainGroup) this.rainGroup.visible = false;
+      if (this.headlights) this.headlights.visible = true;
+    } else {
+      if (this.daylightTexture) {
+        this.scene.background = this.scene.environment = this.daylightTexture;
+        this.scene.environmentIntensity = 0.6;
+        this.scene.backgroundIntensity = 0.8;
+      } else {
+        this.scene.background = new THREE.Color("#b7c9db");
+      }
+      this.scene.fog = new THREE.Fog("#b7c6d0", 230, 1050);
+      this.sun.intensity = 3.4;
+      this.sun.color.set("#fff0d9");
+      this.hemiLight.intensity = 0.4;
+      this.hemiLight.color.set("#d5e4f8");
+      if (this.rainGroup) this.rainGroup.visible = false;
+      if (this.headlights) this.headlights.visible = false;
+    }
   }
 }
