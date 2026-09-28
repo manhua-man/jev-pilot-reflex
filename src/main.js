@@ -352,6 +352,7 @@ async function finishLoading() {
   touch.sync();
   updateUI();
   drawMap();
+  setPilot(true);
 }
 function changeCamera() {
   const modes = ["chase", "hood", "map"];
