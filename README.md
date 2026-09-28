@@ -136,7 +136,24 @@ npm run dev
     - 自动求取纳什均衡最优反应策略（`⭐ 纳什最优` 高亮），并在 System 1 / System 2 双脑面板中呈现全局决策解释链
   - **人机交互与快捷键**：底栏新增 `⚡ 激进加塞博弈` 高对比度按键，支持键盘快捷键 `G` 瞬时调度侧方车辆向自车压线加塞，实时观测多目标矩阵决策跳变
 
-- [ ] **V6.0 - 具身第一人称驾驶舱与挡风玻璃雨刷物理系统 (First-Person Cockpit & Wiper Physics)**
+- [x] **V6.0 - 多向复杂立体交织汇流与拉链式交替通行博弈 (Elevated Zipper Merge & Social Dilemma)**
+  - **3D 立体高架匝道与合流枢纽 (3D Elevated On-Ramp Viaduct)**：
+    - 70m 高架匝道立体俯冲下桥结构（混凝土支撑立柱、承台帽梁、连续金属防撞护栏与渐变下坡道）
+    - 绿色巨型反光门架指示路牌 `[ ON-RAMP ZIPPER MERGE ⫰ 高架匝道合流口 · 1:1 交替通行 · 一车一让 ]`
+    - 道路地面交替式拉链锯齿标线（Zipper Teeth Markings）与合流口减速让行倒三角标线
+    - 3D 浮空全息动态交替插入槽位框（Holographic Zipper Slot），动态呼吸光效引导匝道车辆入槽
+  - **4 车拉链式交替通行时序博弈 (1-by-1 Alternating Zipper Dynamics)**：
+    - 遵循国际通用交替通行准则（Reißverschlussverfahren / Alternating Merge Rule）
+    - 4 车交互队列状态机：主线前车 $M_1$ 先行通过 $\rightarrow$ 匝道先锋 $R_1$ 打灯切入自车前方预留槽位 $\rightarrow$ 自车 Ego 轮候礼让并通过 $\rightarrow$ 匝道次车 $R_2$ 紧随自车车尾有序汇入
+    - 双脑监视器呈现实时交互队列时序：`[ ✔ M1 主线 先行通过 ] ➔ [ ⫰ R1 匝道 切入槽位中 ] ➔ [ 🛡️ Ego 自车 减速礼让 ] ➔ [ ⏳ R2 匝道 等候轮序 ]`，实时显示动态槽位间隙（Slot Gap）与协同效率指数
+  - **Reflex 5 维拉链博弈收益矩阵与纳什推演**：
+    - 毫秒级并行求解 `拉链礼让·主动留空`、`合流切入·按序跟进`、`强行封堵·拒绝交替`、`向左变道·提前腾道`、`紧急制动·物理刹停`
+    - 智能平衡安全 $J_{\text{safe}}$、效率 $J_{\text{eff}}$ 与平顺 $J_{\text{comf}}$，自动推演选择 `⭐ 帕累托最优交替解`
+  - **人机交互与空间声效**：
+    - 底栏新增 `⫰ 拉链交替汇流` 按钮，绑定快捷键 `Z`
+    - Web Audio 双音阶程序化清脆提示音（C5 $\rightarrow$ E5 Melodic Chime）
+
+- [ ] **V7.0 - 具身第一人称驾驶舱与挡风玻璃雨刷物理系统 (First-Person Cockpit & Wiper Physics)**
   - 3D 具身第一人称驾驶舱（Cockpit View），联动多功能方向盘转角、数字液晶仪表与中控屏实时镜像
   - 挡风玻璃动态雨滴流淌着色器（Droplet Shader）与双连杆雨刷往复刮水物理系统
   - 复杂立体多层环岛通行与大货车盲区借道超车博弈

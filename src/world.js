@@ -158,6 +158,23 @@ export function generateWorld(seed, type = "town") {
   add("crash_barrels", xs[1], forkZ + 8, {
     count: 4,
   });
+
+  // Specialized 3D objects for Elevated Zipper Merge On-Ramp (高架匝道交替通行汇流口)
+  const zipperZ = zs[1] + (zs[2] - zs[1]) * 0.18;
+  add("zipper_gantry", xs[1], zipperZ - 18, {
+    mainText: "ON-RAMP ZIPPER MERGE ⫰",
+    subText: "高架匝道交替合流 · 1:1 交替通行 · 一车一让",
+  });
+  add("zipper_ramp_bridge", xs[1] + 11.0, zipperZ, {
+    mainX: xs[1],
+    length: 70,
+    rampWidth: 5.2,
+    startHeight: 5.5,
+    endHeight: 0.15,
+  });
+  add("zipper_road_marking", xs[1] + 5.5, zipperZ + 12, {
+    length: 36,
+  });
   for (let j = 0; j < n - 1; j++)
     for (let i = 0; i < n - 1; i++) {
       const x = (xs[i] + xs[i + 1]) / 2,

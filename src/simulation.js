@@ -1600,4 +1600,8 @@ export class Simulation {
     if (!this.gameManager) return null;
     return this.gameManager.triggerCutIn();
   }
+  triggerZipperMerge() {
+    if (!this.gameManager) return null;
+    return this.gameManager.triggerZipperMerge();
+  }
 }

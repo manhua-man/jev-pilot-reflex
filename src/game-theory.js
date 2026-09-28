@@ -21,6 +21,8 @@ export class GameTrafficManager {
     this.payoffMatrix = null;
     this.cutInTimer = 0;
     this.swarmActive = true;
+    this.scenarioMode = "swarm"; // "swarm" | "cut_in" | "zipper_merge"
+    this.zipperState = null;
     this.nextId = 1;
     this.initSwarm();
   }
@@ -136,6 +138,8 @@ export class GameTrafficManager {
     }
 
     // Force trigger aggressive cut-in
+    this.scenarioMode = "cut_in";
+    this.zipperState = null;
     candidate.role = "cut_in";
     candidate.state = "aggressive_cut_in";
     candidate.cutInStage = 1;
@@ -149,10 +153,76 @@ export class GameTrafficManager {
     return candidate;
   }
 
+  triggerZipperMerge() {
+    this.scenarioMode = "zipper_merge";
+    this.agents = [];
+    const player = this.sim.player;
+
+    // 1. M1: Mainline Lead Car (ahead in lane 0)
+    const m1 = this.spawnAgent({
+      role: "zipper_m1",
+      relAhead: 28,
+      relRight: 0,
+      speed: Math.max(12, player.speed * 0.98),
+      aggressiveness: 0.35,
+      name: "NPC-M1 (主线前车)",
+      color: "#a855f7",
+    });
+    m1.statusText = "主线先行通过 ✔";
+
+    // 2. R1: First on-ramp merge vehicle (ahead right, descending ramp)
+    const r1 = this.spawnAgent({
+      role: "zipper_r1",
+      relAhead: 13,
+      relRight: 5.2,
+      speed: Math.max(10.5, player.speed * 0.92),
+      aggressiveness: 0.75,
+      name: "NPC-R1 (匝道先锋)",
+      color: "#10b981",
+    });
+    r1.blinker = "left";
+    r1.currentLaneRight = 5.2;
+    r1.targetLaneRight = 0.0;
+    r1.statusText = "匝道第1顺位·交替切入中";
+
+    // 3. R2: Second on-ramp vehicle (behind R1 on ramp, yields to Ego)
+    const r2 = this.spawnAgent({
+      role: "zipper_r2",
+      relAhead: -5,
+      relRight: 5.6,
+      speed: Math.max(9.5, player.speed * 0.88),
+      aggressiveness: 0.55,
+      name: "NPC-R2 (匝道次车)",
+      color: "#f59e0b",
+    });
+    r2.blinker = "left";
+    r2.currentLaneRight = 5.6;
+    r2.targetLaneRight = 5.6;
+    r2.statusText = "匝道第2顺位·等候轮序";
+
+    this.keyAdversary = r1;
+    this.zipperState = {
+      stage: "r1_merging", // "r1_merging" | "ego_passing" | "r2_merging" | "completed"
+      slotGap: 14.5,
+      cooperationScore: 98,
+      flowEfficiency: 95.5,
+      egoYielded: false,
+    };
+
+    this.sim.event("⫰ 触发高架匝道拉链式交替通行博弈 (Zipper Merge)！主线与匝道 1:1 交替汇流", "warning");
+    return r1;
+  }
+
   update(dt) {
     if (!this.swarmActive || this.sim.paused || this.sim.crash) return;
     const player = this.sim.player;
     const roadSpeedLimit = 16.6; // ~60 km/h
+
+    if (this.scenarioMode === "zipper_merge") {
+      this.updateZipperTraffic(player, dt, roadSpeedLimit);
+      this.payoffMatrix = this.evaluateZipperPayoffMatrix(player);
+      return;
+    }
 
     // Update each NPC agent
     for (const agent of this.agents) {
@@ -478,4 +548,279 @@ export class GameTrafficManager {
     }
     return `路况畅通，Reflex 保持 [平稳巡航] (期望收益 ${best.expectedU})，多车博弈流处于稳定态。`;
   }
+
+  updateZipperTraffic(player, dt, speedLimit) {
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+
+    for (const agent of this.agents) {
+      const dx = agent.x - player.x;
+      const dz = agent.z - player.z;
+      const relAhead = dx * sinH - dz * cosH;
+      const relRight = dx * cosH + dz * sinH;
+      agent.gap = relAhead;
+
+      const closingSpeed = player.speed - agent.speed;
+      agent.ttc = (closingSpeed > 0.5 && relAhead > 0) ? (relAhead / closingSpeed) : 9.9;
+
+      if (agent.role === "zipper_m1") {
+        agent.blinker = "none";
+        agent.lateralVelocity = 0;
+        agent.speed += clamp(speedLimit * 0.95 - agent.speed, -1.0, 1.5) * dt;
+        agent.statusText = "主线先行通过 ✔";
+      } else if (agent.role === "zipper_r1") {
+        const isYielding = player.speed < agent.speed + 0.5 || relAhead > 8.0;
+        const isBlocking = player.speed >= agent.speed + 2.0 && relAhead < 6.5;
+
+        if (isBlocking) {
+          agent.statusText = "⚠️ 主线封堵·匝道控速避碰";
+          agent.speed += clamp(player.speed * 0.7 - agent.speed, -3.5, 0.5) * dt;
+          if (this.zipperState) {
+            this.zipperState.cooperationScore = Math.max(15, this.zipperState.cooperationScore - 12 * dt);
+          }
+        } else {
+          agent.blinker = "left";
+          const latDiff = relRight - 0.0;
+          const desiredLatVel = -clamp(latDiff * 1.35, 0.35, 1.85);
+          agent.lateralVelocity += (desiredLatVel - agent.lateralVelocity) * 3.2 * dt;
+          agent.speed += clamp(Math.max(player.speed + 0.5, 11) - agent.speed, -1.5, 2.0) * dt;
+
+          if (Math.abs(relRight) < 0.6) {
+            agent.blinker = "none";
+            agent.lateralVelocity = 0;
+            agent.statusText = "已完成交替汇入 ✔";
+            if (this.zipperState && this.zipperState.stage === "r1_merging") {
+              this.zipperState.stage = "ego_passing";
+              const r2Agent = this.agents.find(a => a.role === "zipper_r2");
+              if (r2Agent) this.keyAdversary = r2Agent;
+            }
+          } else {
+            agent.statusText = `匝道交替切入 (横向 ${relRight.toFixed(1)}m)`;
+          }
+        }
+      } else if (agent.role === "zipper_r2") {
+        if (!this.zipperState || this.zipperState.stage === "r1_merging" || this.zipperState.stage === "ego_passing") {
+          agent.blinker = "left";
+          agent.lateralVelocity = 0;
+          agent.speed += clamp(Math.min(player.speed * 0.9, 10.5) - agent.speed, -2, 2) * dt;
+          agent.statusText = "礼让自车·轮候等候";
+
+          if (this.zipperState && this.zipperState.stage === "ego_passing" && relAhead < -6.5) {
+            this.zipperState.stage = "r2_merging";
+          }
+        } else if (this.zipperState.stage === "r2_merging") {
+          agent.blinker = "left";
+          const latDiff = relRight - 0.0;
+          const desiredLatVel = -clamp(latDiff * 1.3, 0.35, 1.8);
+          agent.lateralVelocity += (desiredLatVel - agent.lateralVelocity) * 2.8 * dt;
+          agent.speed += clamp(Math.max(player.speed, 11.5) - agent.speed, -1.5, 2.0) * dt;
+
+          if (Math.abs(relRight) < 0.6) {
+            agent.blinker = "none";
+            agent.lateralVelocity = 0;
+            agent.statusText = "次席汇流完成·恢复编队 ✔";
+            this.zipperState.stage = "completed";
+            this.sim.event("✔ 匝道拉链交替汇流全部完成！博弈协同度 100%", "success");
+          } else {
+            agent.statusText = `次车按序汇入中 (横向 ${relRight.toFixed(1)}m)`;
+          }
+        } else {
+          agent.blinker = "none";
+          agent.lateralVelocity = 0;
+          agent.statusText = "跟车巡航";
+        }
+      }
+
+      // Longitudinal motion integration
+      const fX = Math.sin(agent.heading);
+      const fZ = -Math.cos(agent.heading);
+      const rX = Math.cos(agent.heading);
+      const rZ = Math.sin(agent.heading);
+
+      agent.x += fX * agent.speed * dt + rX * agent.lateralVelocity * dt;
+      agent.z += fZ * agent.speed * dt + rZ * agent.lateralVelocity * dt;
+
+      const steerAngle = Math.atan2(agent.lateralVelocity, Math.max(2, agent.speed)) * 0.6;
+      agent.heading = player.heading + steerAngle;
+    }
+
+    // Dynamic slot distance calculation
+    if (this.zipperState) {
+      const r1 = this.agents.find(a => a.role === "zipper_r1");
+      if (r1) {
+        this.zipperState.slotGap = Math.max(0, r1.gap);
+      }
+    }
+  }
+
+  evaluateZipperPayoffMatrix(player) {
+    const adversary = this.keyAdversary || this.agents.find(a => a.role === "zipper_r1") || this.agents[0];
+    const friction = this.sim.roadFriction || 0.9;
+    const speed = player.speed;
+
+    const dx = adversary.x - player.x;
+    const dz = adversary.z - player.z;
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+    const relAhead = dx * sinH - dz * cosH;
+    const relRight = dx * cosH + dz * sinH;
+    const closingSpeed = speed - adversary.speed;
+    const rawTTC = (closingSpeed > 0.2 && relAhead > 0) ? (relAhead / closingSpeed) : 9.9;
+
+    const wSafe = 0.50;
+    const wEff = 0.30;
+    const wComf = 0.20;
+
+    const stage = this.zipperState?.stage || "r1_merging";
+    const pCommit = stage === "r1_merging" ? 0.90 : 0.40;
+
+    const rows = [];
+
+    // 1. ZIPPER YIELD (拉链礼让·主动留空)
+    {
+      const jSafe = round(clamp(96 * (friction / 0.9), 65, 99), 1);
+      const jEff = stage === "r1_merging" ? 86 : 82;
+      const jComf = 93;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "zipper_yield",
+        name: "拉链礼让·主动留空",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: stage === "r1_merging" ? "⭐ 帕累托最优交替解" : "轮序保持",
+      });
+    }
+
+    // 2. ZIPPER MERGE (合流切入·按序跟进)
+    {
+      const jSafe = stage === "r1_merging" ? 78 : 94;
+      const jEff = 94;
+      const jComf = 88;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "zipper_merge",
+        name: "合流切入·按序跟进",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: stage === "ego_passing" ? "⭐ 顺位通过合流口" : "按序跟车",
+      });
+    }
+
+    // 3. GREEDY BLOCK (强行封堵·拒绝交替)
+    {
+      const jSafe = 22; // High crash risk if forcing closure on merging vehicle
+      const jEff = 95;
+      const jComf = 42;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "greedy_block",
+        name: "强行封堵·拒绝交替",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: "❌ 诱发汇流严重冲突",
+      });
+    }
+
+    // 4. EVADE LEFT (向左变道·提前腾道)
+    {
+      const jSafe = 92;
+      const jEff = 96;
+      const jComf = 79;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "evade_left",
+        name: "向左变道·提前腾道",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: "左道净空充足",
+      });
+    }
+
+    // 5. AEB BRAKE (紧急制动·物理刹停)
+    {
+      const jSafe = round(84 * (friction / 0.9), 40, 90);
+      const jEff = 5;
+      const jComf = 20;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "aeb_brake",
+        name: "紧急制动·物理刹停",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: "非危急兜底减速",
+      });
+    }
+
+    // Pick best action based on stage and utility
+    let bestIndex = 0;
+    if (stage === "r1_merging") {
+      bestIndex = 0; // zipper_yield
+    } else if (stage === "ego_passing" || stage === "completed") {
+      bestIndex = 1; // zipper_merge
+    } else {
+      let maxU = -Infinity;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].expectedU > maxU) {
+          maxU = rows[i].expectedU;
+          bestIndex = i;
+        }
+      }
+    }
+    rows[bestIndex].isBest = true;
+
+    return {
+      mode: "zipper_merge",
+      zipperState: {
+        stage: this.zipperState ? this.zipperState.stage : "r1_merging",
+        slotGap: this.zipperState ? round(this.zipperState.slotGap, 1) : 14.5,
+        cooperationScore: this.zipperState ? round(this.zipperState.cooperationScore, 0) : 98,
+        flowEfficiency: this.zipperState ? round(this.zipperState.flowEfficiency, 1) : 95.5,
+        tokens: [
+          { id: "m1", label: "M1 主线", sub: "先行通过", status: "done" },
+          { id: "r1", label: "R1 匝道", sub: stage === "r1_merging" ? "切入槽位中" : "汇入就位", status: stage === "r1_merging" ? "active" : "done" },
+          { id: "ego", label: "Ego 自车", sub: stage === "r1_merging" ? "减速礼让" : (stage === "ego_passing" ? "领航通过" : "平稳巡航"), status: stage === "r1_merging" ? "yield" : (stage === "ego_passing" ? "active" : "done") },
+          { id: "r2", label: "R2 匝道", sub: stage === "r2_merging" ? "跟进汇入" : (stage === "completed" ? "汇入完成" : "等候轮序"), status: stage === "r2_merging" ? "active" : (stage === "completed" ? "done" : "wait") },
+        ],
+      },
+      adversary: {
+        id: adversary.id,
+        name: adversary.name,
+        role: adversary.role,
+        statusText: adversary.statusText,
+        aggressiveness: adversary.aggressiveness,
+        gap: round(relAhead, 1),
+        lateralGap: round(relRight, 1),
+        ttc: round(rawTTC, 1),
+        pCommit: round(pCommit * 100, 0),
+      },
+      rows,
+      bestAction: rows[bestIndex],
+      decisionRationale: this.composeZipperRationale(rows[bestIndex], adversary, this.zipperState),
+    };
+  }
+
+  composeZipperRationale(best, adversary, state) {
+    const stage = state?.stage || "r1_merging";
+    if (stage === "r1_merging") {
+      return `高架合流口执行《交替通行准则》，Reflex 纳什均衡选择 [拉链礼让·主动留空] (期望收益 ${best.expectedU})，平滑控速为 R1 车腾出 14.5m 安全入槽空间，达成帕累托最优协同。`;
+    } else if (stage === "ego_passing") {
+      return `R1 匝道车已成功入槽，Reflex 切换至 [合流切入·按序跟进] (期望收益 ${best.expectedU})，自车顺位通过合流区，后方 R2 车自觉礼让。`;
+    } else if (stage === "r2_merging") {
+      return `自车已通过合流点，R2 匝道车正有序跟入自车车尾，Reflex 保持标称车道居中巡航。`;
+    } else if (stage === "completed") {
+      return `🎉 4 车拉链式交替通行博弈圆满完成！博弈协同度 100%，无制动休克，通行效率最优。`;
+    }
+    return `Reflex 监控多向复杂立体交织流，维持最优博弈均衡。`;
+  }
 }
+

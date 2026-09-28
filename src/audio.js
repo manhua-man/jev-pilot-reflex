@@ -166,6 +166,37 @@ export class DriveAudio {
     } catch (_) {}
   }
 
+  playZipperChime() {
+    this.ensureContext();
+    if (!this.ctx || this.muted) return;
+    try {
+      const now = this.ctx.currentTime;
+      // Tone 1: C5 (523.25 Hz)
+      const osc1 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(523.25, now);
+      gain1.gain.setValueAtTime(0.18, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc1.connect(gain1);
+      gain1.connect(this.masterGain);
+      osc1.start(now);
+      osc1.stop(now + 0.15);
+
+      // Tone 2: E5 (659.25 Hz) - delayed 70ms
+      const osc2 = this.ctx.createOscillator();
+      const gain2 = this.ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(659.25, now + 0.07);
+      gain2.gain.setValueAtTime(0.20, now + 0.07);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+      osc2.connect(gain2);
+      gain2.connect(this.masterGain);
+      osc2.start(now + 0.07);
+      osc2.stop(now + 0.30);
+    } catch (_) {}
+  }
+
   toggleMute() {
     this.ensureContext();
     this.muted = !this.muted;

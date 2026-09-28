@@ -206,6 +206,76 @@ function forkGuideSign({ main, sub, arrow = "left", detail = "KEEP LANE · 保�
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
+
+function zipperGuideSign({ main, sub, detail = "NASH COOPERATION · 1:1 交替通行 · 一车一让" }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1000;
+  canvas.height = 360;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#15803d"; // Highway green
+  ctx.fillRect(0, 0, 1000, 360);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.roundRect(16, 16, 968, 328, 16);
+  ctx.stroke();
+
+  // Top header band
+  ctx.fillStyle = "#166534";
+  ctx.fillRect(20, 20, 960, 56);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 26px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("HIGHWAY MERGE ZONE · 高速匝道交织合流管控区", 40, 48);
+
+  // Zipper Emblem ⫰
+  ctx.font = "bold 64px sans-serif";
+  ctx.fillStyle = "#facc15";
+  ctx.fillText("⫰", 45, 145);
+
+  // Main Title
+  ctx.font = "bold 44px sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(main || "ON-RAMP ZIPPER MERGE ⫰", 125, 130);
+
+  // Subtitle
+  ctx.font = "bold 38px sans-serif";
+  ctx.fillStyle = "#facc15";
+  ctx.fillText(sub || "高架匝道合流口 · 1:1 交替通行", 125, 195);
+
+  // Detail instruction
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 24px sans-serif";
+  ctx.fillText(detail, 125, 280);
+
+  // Converging arrows on the right
+  ctx.save();
+  ctx.translate(880, 185);
+  ctx.fillStyle = "#ffffff";
+  // Mainline straight arrow
+  ctx.fillRect(-35, -45, 14, 90);
+  ctx.beginPath();
+  ctx.moveTo(-45, -45);
+  ctx.lineTo(-28, -68);
+  ctx.lineTo(-11, -45);
+  ctx.fill();
+  // Ramp merging angled arrow
+  ctx.beginPath();
+  ctx.moveTo(35, 45);
+  ctx.lineTo(22, 45);
+  ctx.lineTo(-8, -15);
+  ctx.lineTo(-8, -35);
+  ctx.lineTo(8, -8);
+  ctx.lineTo(35, 30);
+  ctx.fill();
+  ctx.restore();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function hazardSignTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -244,7 +314,14 @@ function makeBadgeTexture(text, role) {
   canvas.width = 384;
   canvas.height = 96;
   const ctx = canvas.getContext("2d");
-  const borderColor = role === "cut_in" ? "#f59e0b" : role === "overtake" ? "#06b6d4" : "#a855f7";
+  const borderColor =
+    role === "cut_in" || role === "zipper_r2"
+      ? "#f59e0b"
+      : role === "overtake"
+      ? "#06b6d4"
+      : role === "zipper_r1" || role === "zipper"
+      ? "#10b981"
+      : "#a855f7";
 
   ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
   ctx.strokeStyle = borderColor;
@@ -269,7 +346,14 @@ function updateBadgeTexture(badgeObj, text, role) {
   if (badgeObj.lastText === text) return;
   badgeObj.lastText = text;
   const ctx = badgeObj.ctx;
-  const borderColor = role === "cut_in" ? "#f59e0b" : role === "overtake" ? "#06b6d4" : "#a855f7";
+  const borderColor =
+    role === "cut_in" || role === "zipper_r2"
+      ? "#f59e0b"
+      : role === "overtake"
+      ? "#06b6d4"
+      : role === "zipper_r1" || role === "zipper"
+      ? "#10b981"
+      : "#a855f7";
 
   ctx.clearRect(0, 0, 384, 96);
   ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
@@ -765,6 +849,69 @@ export class DriveScene {
         s.add(hazardMesh);
         continue;
       }
+      if (o.type === "zipper_gantry") {
+        for (const xOff of [-14, 14]) {
+          cyl(s, 0.24, 9.2, o.x + xOff, 4.6, o.z, "#475569");
+        }
+        box(s, 28.5, 0.35, 0.35, o.x, 8.4, o.z, "#475569");
+        box(s, 28.5, 0.35, 0.35, o.x, 9.2, o.z, "#475569");
+        const gantryMesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(12.5, 4.5),
+          new THREE.MeshBasicMaterial({
+            map: zipperGuideSign({
+              main: o.mainText || "ON-RAMP ZIPPER MERGE ⫰",
+              sub: o.subText || "高架匝道合流口 · 1:1 交替通行",
+            }),
+            side: THREE.DoubleSide,
+          }),
+        );
+        gantryMesh.position.set(o.x, 7.8, o.z);
+        gantryMesh.rotation.y = Math.PI;
+        s.add(gantryMesh);
+        continue;
+      }
+      if (o.type === "zipper_ramp_bridge") {
+        const rampLen = o.length || 70;
+        const rampW = o.rampWidth || 5.2;
+        const numSegs = 14;
+        const segLen = rampLen / numSegs;
+        const startH = o.startHeight || 5.5;
+        const endH = o.endHeight || 0.15;
+
+        for (let i = 0; i < numSegs; i++) {
+          const t = (i + 0.5) / numSegs;
+          const segX = o.x - t * 4.2;
+          const segY = (1 - t) * startH + t * endH;
+          const segZ = (o.z - rampLen / 2) + (i + 0.5) * segLen;
+
+          // Road surface slab
+          box(s, rampW, 0.35, segLen * 1.02, segX, segY, segZ, "#262626");
+
+          // Guardrails along both sides of ramp
+          box(s, 0.12, 0.75, segLen * 1.02, segX - rampW / 2 + 0.08, segY + 0.45, segZ, "#cbd5e1");
+          box(s, 0.12, 0.75, segLen * 1.02, segX + rampW / 2 - 0.08, segY + 0.45, segZ, "#cbd5e1");
+
+          // Concrete bridge support piers for elevated segments
+          if (segY > 1.2 && i % 2 === 0) {
+            cyl(s, 0.55, segY, segX, segY / 2, segZ, "#94a3b8", 16);
+            box(s, rampW + 0.8, 0.45, 1.2, segX, segY - 0.25, segZ, "#64748b");
+            box(s, 2.2, 0.3, 2.2, segX, 0.15, segZ, "#475569");
+          }
+        }
+        continue;
+      }
+      if (o.type === "zipper_road_marking") {
+        const markLen = o.length || 36;
+        for (let d = 0; d < markLen; d += 3.2) {
+          const isLeftTooth = (Math.floor(d / 3.2) % 2 === 0);
+          const toothX = o.x + (isLeftTooth ? -0.55 : 0.55);
+          box(s, 0.65, 0.02, 1.8, toothX, 0.082, o.z + d, "#ffffff");
+        }
+        for (const [tz, tw] of [[-4.0, 2.0], [-2.5, 1.4], [-1.0, 0.8]]) {
+          box(s, tw, 0.02, 0.35, o.x + 1.2, 0.082, o.z + tz, "#ffffff");
+        }
+        continue;
+      }
       if (o.type === "streetlight") {
         cyl(s, 0.075, o.height, o.x, o.height / 2, o.z, "#596b61");
         box(s, 1.3, 0.12, 0.6, o.x - 0.5, o.height, o.z, "#e4e5d7");
@@ -1150,6 +1297,37 @@ export class DriveScene {
     this.gameBeam = new THREE.Line(beamGeo, this.gameBeamMat);
     this.gameBeam.visible = false;
     this.scene.add(this.gameBeam);
+
+    // 3D Holographic Zipper Merge Slot Indicator
+    this.zipperSlotGroup = new THREE.Group();
+    const slotPlaneGeo = new THREE.PlaneGeometry(2.6, 5.2);
+    this.zipperSlotMat = new THREE.MeshBasicMaterial({
+      color: "#10b981",
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const slotPlane = new THREE.Mesh(slotPlaneGeo, this.zipperSlotMat);
+    slotPlane.rotation.x = -Math.PI / 2;
+    slotPlane.position.y = 0.08;
+    this.zipperSlotGroup.add(slotPlane);
+
+    const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(2.6, 0.35, 5.2));
+    this.zipperSlotEdgeMat = new THREE.LineBasicMaterial({ color: "#34d399", transparent: true, opacity: 0.85 });
+    const slotEdges = new THREE.LineSegments(edgeGeo, this.zipperSlotEdgeMat);
+    slotEdges.position.y = 0.22;
+    this.zipperSlotGroup.add(slotEdges);
+
+    this.zipperBadgeData = makeBadgeTexture("⫰ ZIPPER SLOT · 交替插入槽位", "zipper");
+    const zipperBadgeMat = new THREE.SpriteMaterial({ map: this.zipperBadgeData.texture, transparent: true, depthTest: false });
+    this.zipperBadgeSprite = new THREE.Sprite(zipperBadgeMat);
+    this.zipperBadgeSprite.scale.set(4.2, 1.05, 1);
+    this.zipperBadgeSprite.position.set(0, 2.2, 0);
+    this.zipperSlotGroup.add(this.zipperBadgeSprite);
+
+    this.zipperSlotGroup.visible = false;
+    this.scene.add(this.zipperSlotGroup);
     const vertices = [0, 0.18, 0];
     for (let k = 0; k <= 40; k++) {
       const a = ((-65 + (k * 130) / 40) * Math.PI) / 180;
@@ -1355,6 +1533,15 @@ export class DriveScene {
 
     // Render Multi-Agent Game Theory Swarm
     if (this.sim.gameManager?.agents) {
+      // Prune meshes of agents that were removed or reset
+      const activeIds = new Set(this.sim.gameManager.agents.map((a) => a.id));
+      for (const [id, m] of this.gameVehicles.entries()) {
+        if (!activeIds.has(id)) {
+          this.scene.remove(m);
+          this.gameVehicles.delete(id);
+        }
+      }
+
       for (const agent of this.sim.gameManager.agents) {
         let m = this.gameVehicles.get(agent.id);
         if (!m) {
@@ -1381,7 +1568,7 @@ export class DriveScene {
       // Dynamic Game-Theoretic Interaction Beam
       const adversary =
         this.sim.gameManager.keyAdversary ||
-        this.sim.gameManager.agents.find((a) => a.role === "cut_in");
+        this.sim.gameManager.agents.find((a) => a.role === "cut_in" || a.role === "zipper_r1");
       if (
         adversary &&
         Math.hypot(v.x - adversary.x, v.z - adversary.z) < 55
@@ -1396,7 +1583,10 @@ export class DriveScene {
         pos[5] = adversary.z;
         this.gameBeam.geometry.attributes.position.needsUpdate = true;
 
-        if (adversary.ttc < 2.0) {
+        if (this.sim.gameManager.scenarioMode === "zipper_merge") {
+          this.gameBeamMat.color.set("#10b981"); // cooperative emerald green
+          this.gameBeamMat.opacity = 0.88;
+        } else if (adversary.ttc < 2.0) {
           this.gameBeamMat.color.set("#ef4444"); // emergency red
           this.gameBeamMat.opacity = blinkOn ? 0.95 : 0.4;
         } else if (
@@ -1412,6 +1602,37 @@ export class DriveScene {
       } else {
         this.gameBeam.visible = false;
       }
+    }
+
+    // Dynamic 3D Holographic Zipper Slot Indicator
+    if (this.sim.gameManager?.scenarioMode === "zipper_merge" && this.sim.gameManager?.zipperState && this.zipperSlotGroup) {
+      const zState = this.sim.gameManager.zipperState;
+      const r1 = this.sim.gameManager.agents.find((a) => a.role === "zipper_r1");
+      this.zipperSlotGroup.visible = true;
+
+      const fX = Math.sin(v.heading);
+      const fZ = -Math.cos(v.heading);
+
+      const slotAhead = Math.max(8.0, Math.min(22.0, r1 ? r1.gap : 13.0));
+      const slotX = v.x + fX * slotAhead;
+      const slotZ = v.z + fZ * slotAhead;
+      this.zipperSlotGroup.position.set(slotX, 0, slotZ);
+      this.zipperSlotGroup.rotation.y = -v.heading;
+
+      const pulse = 0.45 + 0.3 * Math.sin(performance.now() * 0.007);
+      this.zipperSlotMat.opacity = pulse;
+
+      if (zState.stage === "ego_passing" || zState.stage === "completed") {
+        this.zipperSlotMat.color.set("#10b981");
+        this.zipperSlotEdgeMat.color.set("#34d399");
+        updateBadgeTexture(this.zipperBadgeData, "✔ 槽位就位 · 顺利汇入", "zipper_r1");
+      } else {
+        this.zipperSlotMat.color.set("#06b6d4");
+        this.zipperSlotEdgeMat.color.set("#38bdf8");
+        updateBadgeTexture(this.zipperBadgeData, `⫰ 预留槽位 ${(zState.slotGap || 14.5).toFixed(1)}m · 礼让让行`, "zipper");
+      }
+    } else if (this.zipperSlotGroup) {
+      this.zipperSlotGroup.visible = false;
     }
 
     // Dynamic Rain Particles Falling
