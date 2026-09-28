@@ -1,9 +1,22 @@
 const $ = (id) => document.getElementById(id);
 
 export const nextPaint = () =>
-  new Promise((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(resolve)),
-  );
+  new Promise((resolve) => {
+    let resolved = false;
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+    const timer = setTimeout(done, 50);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        clearTimeout(timer);
+        done();
+      });
+    });
+  });
 
 export function showLoading(message) {
   $("loading-message").textContent = message;

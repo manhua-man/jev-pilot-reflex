@@ -344,8 +344,9 @@ async function finishLoading() {
   showLoading("Preparing the road…");
   await nextPaint();
   await scene.prepare();
-  await document.fonts.ready;
-  await nextPaint();
+  try {
+    await document.fonts.ready;
+  } catch (_e) {}
   lastNow = performance.now();
   loading = false;
   hideLoading();
