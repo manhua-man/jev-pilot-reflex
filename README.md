@@ -153,10 +153,11 @@ npm run dev
     - 底栏新增 `⫰ 拉链交替汇流` 按钮，绑定快捷键 `Z`
     - Web Audio 双音阶程序化清脆提示音（C5 $\rightarrow$ E5 Melodic Chime）
 
-- [ ] **V7.0 - 具身第一人称驾驶舱与挡风玻璃雨刷物理系统 (First-Person Cockpit & Wiper Physics)**
-  - 3D 具身第一人称驾驶舱（Cockpit View），联动多功能方向盘转角、数字液晶仪表与中控屏实时镜像
-  - 挡风玻璃动态雨滴流淌着色器（Droplet Shader）与双连杆雨刷往复刮水物理系统
-  - 复杂立体多层环岛通行与大货车盲区借道超车博弈
+- [ ] **V7.0 - 复杂多车道环岛路权博弈与大货车盲区借道超车 (Multi-Lane Roundabout & Truck Blind-Spot Game)**
+  - 坚持**第三人称上帝跟随视角（Chase View）**，保持全局智驾态势感知与多智能体交互清晰度
+  - **无信号灯复杂立体多车道环岛（Multi-Lane Roundabout Priority）**：进环主动让行、环内多车交织切线与出环变道通行权博弈
+  - **大货车长车身视觉遮挡与盲区超车（Heavy Truck Occlusion & Overtake）**：大货车右转“内轮差”死亡弯角规避、超长车身借道超车与盲区突发障碍物 Reflex 紧急避险
+  - 强化多车交互连线与全息包围盒，杜绝赛车游戏化干扰，坚守智驾算法可视化与工效学核心
 
 ---
 
