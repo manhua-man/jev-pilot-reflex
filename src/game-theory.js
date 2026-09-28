@@ -213,6 +213,50 @@ export class GameTrafficManager {
     return r1;
   }
 
+  triggerTruckScenario() {
+    this.scenarioMode = "truck_overtake";
+    this.agents = [];
+    const player = this.sim.player;
+
+    // 1. NPC-Truck: 14m Heavy Container Truck ahead in lane 0
+    const truck = this.spawnAgent({
+      role: "truck",
+      relAhead: 24,
+      relRight: 0,
+      speed: 7.2, // ~26 km/h slow crawl
+      aggressiveness: 0.25,
+      name: "NPC-重卡 (14米集装箱挂车)",
+      color: "#1e3a8a",
+    });
+    truck.width = 2.5;
+    truck.depth = 13.5;
+    truck.statusText = "重载慢行 (26 km/h)";
+
+    // 2. NPC-Left: Fast overtaking vehicle in left lane (-3.6m)
+    const leftCar = this.spawnAgent({
+      role: "truck_oncoming",
+      relAhead: 70,
+      relRight: -3.6,
+      speed: 15.5,
+      aggressiveness: 0.7,
+      name: "NPC-左侧快车",
+      color: "#06b6d4",
+    });
+    leftCar.statusText = "左侧快车后方逼近";
+
+    this.keyAdversary = truck;
+    this.truckState = {
+      stage: "blocked_behind", // "blocked_behind" | "peeking_left" | "overtaking" | "completed"
+      occlusionRatio: 88,
+      peekOffset: 0,
+      laneClearance: false,
+      overtakeProgress: 0,
+    };
+
+    this.sim.event("🚚 触发大货车视觉遮挡与借道超车博弈！前视感知盲区达 88%，评估探头与超车策略", "warning");
+    return truck;
+  }
+
   update(dt) {
     if (!this.swarmActive || this.sim.paused || this.sim.crash) return;
     const player = this.sim.player;
@@ -221,6 +265,12 @@ export class GameTrafficManager {
     if (this.scenarioMode === "zipper_merge") {
       this.updateZipperTraffic(player, dt, roadSpeedLimit);
       this.payoffMatrix = this.evaluateZipperPayoffMatrix(player);
+      return;
+    }
+
+    if (this.scenarioMode === "truck_overtake") {
+      this.updateTruckTraffic(player, dt, roadSpeedLimit);
+      this.payoffMatrix = this.evaluateTruckPayoffMatrix(player);
       return;
     }
 
@@ -821,6 +871,233 @@ export class GameTrafficManager {
       return `🎉 4 车拉链式交替通行博弈圆满完成！博弈协同度 100%，无制动休克，通行效率最优。`;
     }
     return `Reflex 监控多向复杂立体交织流，维持最优博弈均衡。`;
+  }
+
+  updateTruckTraffic(player, dt, speedLimit) {
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+
+    const truck = this.agents.find(a => a.role === "truck");
+    const leftCar = this.agents.find(a => a.role === "truck_oncoming");
+
+    for (const agent of this.agents) {
+      const dx = agent.x - player.x;
+      const dz = agent.z - player.z;
+      const relAhead = dx * sinH - dz * cosH;
+      const relRight = dx * cosH + dz * sinH;
+      agent.gap = relAhead;
+
+      const closingSpeed = player.speed - agent.speed;
+      agent.ttc = (closingSpeed > 0.5 && relAhead > 0) ? (relAhead / closingSpeed) : 9.9;
+
+      if (agent.role === "truck") {
+        agent.blinker = "none";
+        agent.lateralVelocity = 0;
+        agent.speed += clamp(7.2 - agent.speed, -1.0, 1.0) * dt;
+        agent.statusText = "重载慢行 (26 km/h) · 视线严重遮挡";
+      } else if (agent.role === "truck_oncoming") {
+        agent.blinker = "none";
+        agent.lateralVelocity = 0;
+        agent.speed += clamp(15.5 - agent.speed, -1.0, 1.5) * dt;
+        agent.statusText = relAhead < 0 ? "已超越自车" : "左侧快速逼近中";
+      }
+
+      const fX = Math.sin(agent.heading);
+      const fZ = -Math.cos(agent.heading);
+      const rX = Math.cos(agent.heading);
+      const rZ = Math.sin(agent.heading);
+
+      agent.x += fX * agent.speed * dt + rX * agent.lateralVelocity * dt;
+      agent.z += fZ * agent.speed * dt + rZ * agent.lateralVelocity * dt;
+      agent.heading = player.heading;
+    }
+
+    if (this.truckState && truck) {
+      const distanceToTruck = Math.max(0.5, truck.gap);
+      const leftClear = !leftCar || leftCar.gap < -6.0 || leftCar.gap > 50.0;
+      this.truckState.laneClearance = leftClear;
+
+      if (this.truckState.stage === "blocked_behind") {
+        if (distanceToTruck < 28.0) {
+          this.truckState.stage = "peeking_left";
+        }
+      } else if (this.truckState.stage === "peeking_left") {
+        this.truckState.peekOffset = Math.min(0.85, this.truckState.peekOffset + 1.2 * dt);
+        this.truckState.occlusionRatio = Math.max(28, Math.round(88 - this.truckState.peekOffset * 70));
+
+        if (leftClear && player.speed > 8.0) {
+          this.truckState.stage = "overtaking";
+        }
+      } else if (this.truckState.stage === "overtaking") {
+        this.truckState.occlusionRatio = 0;
+        if (truck.gap < -14.0) {
+          this.truckState.stage = "completed";
+          this.sim.event("✔ 成功完成大货车借道超车！前方视线完全通透，恢复车道居中巡航", "success");
+        }
+      }
+    }
+  }
+
+  evaluateTruckPayoffMatrix(player) {
+    const truck = this.agents.find(a => a.role === "truck") || this.agents[0];
+    const leftCar = this.agents.find(a => a.role === "truck_oncoming");
+    const friction = this.sim.roadFriction || 0.9;
+    const speed = player.speed;
+
+    const dx = truck.x - player.x;
+    const dz = truck.z - player.z;
+    const sinH = Math.sin(player.heading);
+    const cosH = Math.cos(player.heading);
+    const relAhead = dx * sinH - dz * cosH;
+    const relRight = dx * cosH + dz * sinH;
+    const closingSpeed = speed - truck.speed;
+    const rawTTC = (closingSpeed > 0.2 && relAhead > 0) ? (relAhead / closingSpeed) : 9.9;
+
+    const stage = this.truckState?.stage || "blocked_behind";
+    const leftClear = this.truckState?.laneClearance ?? false;
+
+    const wSafe = 0.52;
+    const wEff = 0.32;
+    const wComf = 0.16;
+
+    const rows = [];
+
+    // 1. PEEK LEFT (探头观测·微偏侦测)
+    {
+      const jSafe = 95.0;
+      const jEff = 88.0;
+      const jComf = 93.0;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "peek_left",
+        name: "探头观测·微偏侦测",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: stage === "blocked_behind" || stage === "peeking_left" ? "⭐ 纳什最优·破除遮挡" : "视距已侦测",
+      });
+    }
+
+    // 2. COMMIT OVERTAKE (借道超车·全力提速)
+    {
+      const jSafe = leftClear ? round(clamp(91.0 * (friction / 0.9), 70, 95), 1) : 25.0;
+      const jEff = 98.0;
+      const jComf = 85.0;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "commit_overtake",
+        name: "借道超车·全力提速",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: leftClear ? (stage === "overtaking" ? "⭐ 提速超车中" : "左道净空充足") : "❌ 左道有快车交织",
+      });
+    }
+
+    // 3. FOLLOW CRAWL (安全跟车·低速蠕行)
+    {
+      const jSafe = 96.0;
+      const jEff = 28.0;
+      const jComf = 95.0;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "follow_crawl",
+        name: "安全跟车·低速蠕行",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: "效率极低·视线受阻",
+      });
+    }
+
+    // 4. ABORT FALL BACK (放弃超车·切回原道)
+    {
+      const jSafe = 96.0;
+      const jEff = 45.0;
+      const jComf = 82.0;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "abort_overtake",
+        name: "放弃超车·切回原道",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: leftClear ? "备用退路" : "⚠️ 避险退避",
+      });
+    }
+
+    // 5. EMERGENCY BRAKE (紧急制动·防内轮差)
+    {
+      const jSafe = round(84.0 * (friction / 0.9), 40, 92);
+      const jEff = 5.0;
+      const jComf = 20.0;
+      const expectedU = round(wSafe * jSafe + wEff * jEff + wComf * jComf, 1);
+      rows.push({
+        id: "emergency_brake",
+        name: "紧急制动·防内轮差",
+        jSafe,
+        jEff,
+        jComf,
+        expectedU,
+        status: rawTTC < 1.5 ? "🚨 极限安全刹车" : "非危急兜底",
+      });
+    }
+
+    let bestIndex = 0;
+    if (stage === "overtaking" && leftClear) {
+      bestIndex = 1;
+    } else if (stage === "completed") {
+      bestIndex = 1;
+    } else {
+      bestIndex = 0;
+    }
+    rows[bestIndex].isBest = true;
+
+    return {
+      mode: "truck_overtake",
+      truckState: {
+        stage,
+        occlusionRatio: this.truckState ? this.truckState.occlusionRatio : 88,
+        peekOffset: this.truckState ? round(this.truckState.peekOffset, 2) : 0,
+        laneClearance: leftClear,
+        tokens: [
+          { id: "blocked", label: "视线封锁", sub: `盲区率 ${this.truckState ? this.truckState.occlusionRatio : 88}%`, status: stage === "blocked_behind" ? "active" : "done" },
+          { id: "peek", label: "探头微偏", sub: "微移 0.7m 侦测", status: stage === "peeking_left" ? "active" : (stage === "blocked_behind" ? "wait" : "done") },
+          { id: "check", label: "左道核验", sub: leftClear ? "净空确认 ✔" : "快车逼近 ⏳", status: leftClear ? "done" : "wait" },
+          { id: "overtake", label: "全力超车", sub: stage === "completed" ? "超车完成" : "提速借道", status: stage === "overtaking" ? "active" : (stage === "completed" ? "done" : "wait") },
+        ],
+      },
+      adversary: {
+        id: truck.id,
+        name: truck.name,
+        role: truck.role,
+        statusText: truck.statusText,
+        aggressiveness: truck.aggressiveness,
+        gap: round(relAhead, 1),
+        lateralGap: round(relRight, 1),
+        ttc: round(rawTTC, 1),
+        pCommit: this.truckState ? this.truckState.occlusionRatio : 88,
+      },
+      rows,
+      bestAction: rows[bestIndex],
+      decisionRationale: this.composeTruckRationale(rows[bestIndex], truck, this.truckState),
+    };
+  }
+
+  composeTruckRationale(best, truck, state) {
+    const stage = state?.stage || "blocked_behind";
+    if (stage === "blocked_behind" || stage === "peeking_left") {
+      return `前车为 14m 重型集装箱卡车，前向视距严重遮挡（盲区率 ${state?.occlusionRatio ?? 88}%）。Reflex 纳什最优解为 [探头观测·微偏侦测] (期望收益 ${best.expectedU})，在车道内向左微偏 0.7m 消除前视感知死角。`;
+    } else if (stage === "overtaking") {
+      return `探头侦测确认左道安全净空，Reflex 下发 [借道超车·全力提速] (期望收益 ${best.expectedU})，迅速超越大货车并远离大车右侧内轮差盲区。`;
+    } else if (stage === "completed") {
+      return `🎉 大货车借道超车顺利完成！自车重获 100% 前向高清视距，恢复标称巡航。`;
+    }
+    return `Reflex 监控重型货车遮挡博弈流，维持最优博弈均衡。`;
   }
 }
 

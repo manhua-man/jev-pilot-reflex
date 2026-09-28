@@ -192,3 +192,120 @@ export function detailedCar(color = "#d6d9df", motorcycle = false) {
   }
   return group;
 }
+
+export function detailedHeavyTruck(cabinColor = "#1e3a8a", containerColor = "#94a3b8") {
+  const group = new THREE.Group();
+  const paintCab = physical(`paint-cab:${cabinColor}`, {
+    color: cabinColor,
+    metalness: 0.6,
+    roughness: 0.28,
+    clearcoat: 0.9,
+  });
+  const paintContainer = physical(`paint-container:${containerColor}`, {
+    color: containerColor,
+    metalness: 0.35,
+    roughness: 0.45,
+  });
+  const glass = physical("truck-glass", {
+    color: "#1e293b",
+    metalness: 0.4,
+    roughness: 0.08,
+    clearcoat: 1,
+  });
+  const rubber = physical("truck-rubber", { color: "#141518", roughness: 0.96 });
+  const chrome = physical("truck-chrome", { color: "#cbd5e1", metalness: 0.92, roughness: 0.2 });
+  const chassis = physical("truck-chassis", { color: "#1e242b", roughness: 0.6, metalness: 0.4 });
+  const led = physical("truck-headlight", { color: "#f8fcff", emissive: "#d9eeff", emissiveIntensity: 2.2, roughness: 0.2 });
+  const tail = physical("truck-taillight", { color: "#ef4444", emissive: "#b91c1c", emissiveIntensity: 1.5, roughness: 0.2 });
+  const hazard = physical("truck-hazard", { color: "#f59e0b", emissive: "#d97706", emissiveIntensity: 0.8, roughness: 0.3 });
+
+  const mesh = (geometry, mat, x, y, z) => {
+    const m = new THREE.Mesh(geometry, mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+  const box = (w, h, d, x, y, z, mat, radius = 0.03) =>
+    mesh(new RoundedBoxGeometry(w, h, d, 2, radius), mat, x, y, z);
+
+  // 1. TRACTOR CABIN (牵引车头)
+  box(2.4, 0.45, 3.4, 0, 0.72, -4.8, chassis, 0.05);
+  box(2.4, 1.9, 2.2, 0, 1.9, -4.3, paintCab, 0.08);
+  box(2.2, 1.25, 1.4, 0, 1.45, -5.9, paintCab, 0.06);
+  box(1.7, 1.05, 0.12, 0, 1.42, -6.65, chrome, 0.02);
+  box(2.45, 0.35, 0.25, 0, 0.65, -6.6, chassis, 0.04);
+  for (const s of [-0.95, 0.95]) {
+    box(0.28, 0.15, 0.1, s, 0.68, -6.7, led, 0.02);
+  }
+  box(2.1, 0.75, 0.08, 0, 2.25, -5.35, glass, 0.02);
+  for (const s of [-1.22, 1.22]) {
+    box(0.06, 0.65, 0.95, s, 2.2, -4.4, glass, 0.02);
+  }
+  box(2.3, 0.65, 1.8, 0, 3.15, -4.2, paintCab, 0.1);
+  for (const s of [-1.15, 1.15]) {
+    mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.8, 12), chrome, s, 2.6, -3.1);
+  }
+
+  // 2. 40FT SHIPPING CONTAINER TRAILER (集装箱货柜半挂车)
+  box(2.35, 0.35, 9.8, 0, 0.88, 1.6, chassis, 0.04);
+  box(2.45, 2.65, 9.5, 0, 2.38, 1.6, paintContainer, 0.08);
+  for (let zRib = -2.8; zRib <= 6.0; zRib += 1.1) {
+    for (const s of [-1.24, 1.24]) {
+      box(0.04, 2.5, 0.08, s, 2.38, zRib, paintContainer, 0.01);
+    }
+  }
+  box(2.35, 2.5, 0.08, 0, 2.38, 6.38, chassis, 0.02);
+  for (const s of [-0.45, 0.45]) {
+    mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.3, 8), chrome, s, 2.38, 6.44);
+  }
+  box(2.4, 0.22, 0.15, 0, 0.58, 6.35, hazard, 0.02);
+  for (const s of [-0.95, 0.95]) {
+    box(0.24, 0.12, 0.08, s, 0.6, 6.44, tail, 0.02);
+  }
+
+  // 3. HEAVY WHEELS (10 重型货车轮胎)
+  const wheelGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.32, 16);
+  wheelGeo.rotateZ(Math.PI / 2);
+  const hubGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.34, 16);
+  hubGeo.rotateZ(Math.PI / 2);
+
+  for (const s of [-1.15, 1.15]) {
+    mesh(wheelGeo, rubber, s, 0.52, -5.6);
+    mesh(hubGeo, chrome, s, 0.52, -5.6);
+  }
+  for (const zAxle of [-3.7, -2.4]) {
+    for (const s of [-1.12, 1.12]) {
+      mesh(wheelGeo, rubber, s, 0.52, zAxle);
+      mesh(hubGeo, chrome, s, 0.52, zAxle);
+    }
+  }
+  for (const zAxle of [4.4, 5.7]) {
+    for (const s of [-1.12, 1.12]) {
+      mesh(wheelGeo, rubber, s, 0.52, zAxle);
+      mesh(hubGeo, chrome, s, 0.52, zAxle);
+    }
+  }
+
+  group.updateMatrixWorld(true);
+  const batches = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    const geometries = batches.get(o.material) || [];
+    const geometry = o.geometry.index
+      ? o.geometry.toNonIndexed()
+      : o.geometry.clone();
+    geometries.push(geometry.applyMatrix4(o.matrixWorld));
+    batches.set(o.material, geometries);
+    o.geometry.dispose();
+  });
+  group.clear();
+  for (const [mat, geometries] of batches) {
+    const geometry = mergeGeometries(geometries);
+    const m = new THREE.Mesh(geometry, mat);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    geometries.forEach((g) => g.dispose());
+  }
+  return group;
+}

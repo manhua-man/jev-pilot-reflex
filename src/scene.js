@@ -15,7 +15,7 @@ import { CameraInput } from "./camera-input.js";
 import { SceneryAssets } from "./scenery-assets.js";
 import { Vegetation } from "./vegetation.js";
 import { loadHeroCar, updateHeroWheels } from "./model-assets.js";
-import { detailedCar } from "./vehicle-model.js";
+import { detailedCar, detailedHeavyTruck } from "./vehicle-model.js";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { assetManager, assetsReady } from "./asset-loading.js";
 import { renderProfile } from "./render-profile.js";
@@ -315,9 +315,11 @@ function makeBadgeTexture(text, role) {
   canvas.height = 96;
   const ctx = canvas.getContext("2d");
   const borderColor =
-    role === "cut_in" || role === "zipper_r2"
+    role === "truck"
+      ? "#f97316"
+      : role === "cut_in" || role === "zipper_r2"
       ? "#f59e0b"
-      : role === "overtake"
+      : role === "overtake" || role === "truck_oncoming"
       ? "#06b6d4"
       : role === "zipper_r1" || role === "zipper"
       ? "#10b981"
@@ -347,9 +349,11 @@ function updateBadgeTexture(badgeObj, text, role) {
   badgeObj.lastText = text;
   const ctx = badgeObj.ctx;
   const borderColor =
-    role === "cut_in" || role === "zipper_r2"
+    role === "truck"
+      ? "#f97316"
+      : role === "cut_in" || role === "zipper_r2"
       ? "#f59e0b"
-      : role === "overtake"
+      : role === "overtake" || role === "truck_oncoming"
       ? "#06b6d4"
       : role === "zipper_r1" || role === "zipper"
       ? "#10b981"
@@ -1328,6 +1332,37 @@ export class DriveScene {
 
     this.zipperSlotGroup.visible = false;
     this.scene.add(this.zipperSlotGroup);
+
+    // 3D Dynamic Sensor Occlusion Shadow (Truck Blind Zone)
+    this.truckOcclusionGroup = new THREE.Group();
+    const truckPlaneGeo = new THREE.PlaneGeometry(3.6, 16);
+    this.truckOcclusionMat = new THREE.MeshBasicMaterial({
+      color: "#ef4444",
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.truckOcclusionPlane = new THREE.Mesh(truckPlaneGeo, this.truckOcclusionMat);
+    this.truckOcclusionPlane.rotation.x = -Math.PI / 2;
+    this.truckOcclusionPlane.position.y = 0.08;
+    this.truckOcclusionGroup.add(this.truckOcclusionPlane);
+
+    const truckEdgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(3.6, 0.25, 16));
+    this.truckOcclusionEdgeMat = new THREE.LineBasicMaterial({ color: "#f87171", transparent: true, opacity: 0.85 });
+    this.truckOcclusionEdges = new THREE.LineSegments(truckEdgeGeo, this.truckOcclusionEdgeMat);
+    this.truckOcclusionEdges.position.y = 0.15;
+    this.truckOcclusionGroup.add(this.truckOcclusionEdges);
+
+    this.truckBadgeData = makeBadgeTexture("⚠️ BLIND ZONE · 视线遮挡 88%", "truck");
+    const truckBadgeMat = new THREE.SpriteMaterial({ map: this.truckBadgeData.texture, transparent: true, depthTest: false });
+    this.truckBadgeSprite = new THREE.Sprite(truckBadgeMat);
+    this.truckBadgeSprite.scale.set(4.6, 1.15, 1);
+    this.truckBadgeSprite.position.set(0, 2.2, 0);
+    this.truckOcclusionGroup.add(this.truckBadgeSprite);
+
+    this.truckOcclusionGroup.visible = false;
+    this.scene.add(this.truckOcclusionGroup);
     const vertices = [0, 0.18, 0];
     for (let k = 0; k <= 40; k++) {
       const a = ((-65 + (k * 130) / 40) * Math.PI) / 180;
@@ -1568,7 +1603,7 @@ export class DriveScene {
       // Dynamic Game-Theoretic Interaction Beam
       const adversary =
         this.sim.gameManager.keyAdversary ||
-        this.sim.gameManager.agents.find((a) => a.role === "cut_in" || a.role === "zipper_r1");
+        this.sim.gameManager.agents.find((a) => a.role === "cut_in" || a.role === "zipper_r1" || a.role === "truck");
       if (
         adversary &&
         Math.hypot(v.x - adversary.x, v.z - adversary.z) < 55
@@ -1583,7 +1618,10 @@ export class DriveScene {
         pos[5] = adversary.z;
         this.gameBeam.geometry.attributes.position.needsUpdate = true;
 
-        if (this.sim.gameManager.scenarioMode === "zipper_merge") {
+        if (this.sim.gameManager.scenarioMode === "truck_overtake") {
+          this.gameBeamMat.color.set("#f97316"); // heavy truck amber-orange
+          this.gameBeamMat.opacity = 0.88;
+        } else if (this.sim.gameManager.scenarioMode === "zipper_merge") {
           this.gameBeamMat.color.set("#10b981"); // cooperative emerald green
           this.gameBeamMat.opacity = 0.88;
         } else if (adversary.ttc < 2.0) {
@@ -1633,6 +1671,56 @@ export class DriveScene {
       }
     } else if (this.zipperSlotGroup) {
       this.zipperSlotGroup.visible = false;
+    }
+
+    // Dynamic 3D Heavy Truck Occlusion Shadow
+    if (this.sim.gameManager?.scenarioMode === "truck_overtake" && this.sim.gameManager?.truckState && this.truckOcclusionGroup) {
+      const tState = this.sim.gameManager.truckState;
+      const truck = this.sim.gameManager.agents.find((a) => a.role === "truck");
+      if (truck) {
+        this.truckOcclusionGroup.visible = true;
+
+        const fX = Math.sin(v.heading);
+        const fZ = -Math.cos(v.heading);
+
+        // Place occlusion zone behind the truck
+        const truckBackGap = Math.max(2.0, truck.gap - 6.5);
+        const zoneLength = Math.max(6.0, Math.min(22.0, truckBackGap));
+        const centerDist = truckBackGap / 2;
+
+        const zoneX = v.x + fX * centerDist;
+        const zoneZ = v.z + fZ * centerDist;
+        this.truckOcclusionGroup.position.set(zoneX, 0, zoneZ);
+        this.truckOcclusionGroup.rotation.y = -v.heading;
+
+        this.truckOcclusionPlane.scale.set(1, zoneLength / 16, 1);
+        this.truckOcclusionEdges.scale.set(1, 1, zoneLength / 16);
+
+        const pulse = 0.40 + 0.25 * Math.sin(performance.now() * 0.008);
+        this.truckOcclusionMat.opacity = pulse;
+
+        if (tState.stage === "completed") {
+          this.truckOcclusionMat.color.set("#10b981");
+          this.truckOcclusionEdgeMat.color.set("#34d399");
+          updateBadgeTexture(this.truckBadgeData, "✔ 超车顺利完成 · 视距恢复 100%", "zipper_r1");
+        } else if (tState.stage === "overtaking") {
+          this.truckOcclusionMat.color.set("#38bdf8");
+          this.truckOcclusionEdgeMat.color.set("#0284c7");
+          updateBadgeTexture(this.truckBadgeData, "⭐ 左道净空确认 · 全力超车中", "overtake");
+        } else if (tState.stage === "peeking_left") {
+          this.truckOcclusionMat.color.set("#f59e0b");
+          this.truckOcclusionEdgeMat.color.set("#fbbf24");
+          updateBadgeTexture(this.truckBadgeData, `🔍 车道微偏 0.7m 探头 (盲区降至 ${tState.occlusionRatio}%)`, "cut_in");
+        } else {
+          this.truckOcclusionMat.color.set("#ef4444");
+          this.truckOcclusionEdgeMat.color.set("#f87171");
+          updateBadgeTexture(this.truckBadgeData, `⚠️ BLIND ZONE · 视线遮挡 ${tState.occlusionRatio}%`, "truck");
+        }
+      } else {
+        this.truckOcclusionGroup.visible = false;
+      }
+    } else if (this.truckOcclusionGroup) {
+      this.truckOcclusionGroup.visible = false;
     }
 
     // Dynamic Rain Particles Falling
@@ -1843,22 +1931,38 @@ export class DriveScene {
     }
   }
   addGameAgentMesh(agent) {
-    const m = carModel(agent.color, false);
+    const isTruck = agent.role === "truck";
+    const m = isTruck
+      ? detailedHeavyTruck(agent.color || "#1e3a8a", "#0f172a")
+      : carModel(agent.color, false);
 
     // Amber Turn Indicators (Front & Rear)
     const blinkMat = new THREE.MeshBasicMaterial({ color: "#f59e0b" });
     const bGeo = new THREE.BoxGeometry(0.18, 0.12, 0.12);
-    const fl = new THREE.Mesh(bGeo, blinkMat); fl.position.set(-0.95, 0.65, -2.15); fl.visible = false; m.add(fl);
-    const fr = new THREE.Mesh(bGeo, blinkMat); fr.position.set(0.95, 0.65, -2.15); fr.visible = false; m.add(fr);
-    const rl = new THREE.Mesh(bGeo, blinkMat); rl.position.set(-0.95, 0.8, 2.15); rl.visible = false; m.add(rl);
-    const rr = new THREE.Mesh(bGeo, blinkMat); rr.position.set(0.95, 0.8, 2.15); rr.visible = false; m.add(rr);
+    let fl, fr, rl, rr;
+    if (isTruck) {
+      fl = new THREE.Mesh(bGeo, blinkMat); fl.position.set(-1.25, 1.0, -6.6); fl.visible = false; m.add(fl);
+      fr = new THREE.Mesh(bGeo, blinkMat); fr.position.set(1.25, 1.0, -6.6); fr.visible = false; m.add(fr);
+      rl = new THREE.Mesh(bGeo, blinkMat); rl.position.set(-1.25, 0.8, 6.4); rl.visible = false; m.add(rl);
+      rr = new THREE.Mesh(bGeo, blinkMat); rr.position.set(1.25, 0.8, 6.4); rr.visible = false; m.add(rr);
+    } else {
+      fl = new THREE.Mesh(bGeo, blinkMat); fl.position.set(-0.95, 0.65, -2.15); fl.visible = false; m.add(fl);
+      fr = new THREE.Mesh(bGeo, blinkMat); fr.position.set(0.95, 0.65, -2.15); fr.visible = false; m.add(fr);
+      rl = new THREE.Mesh(bGeo, blinkMat); rl.position.set(-0.95, 0.8, 2.15); rl.visible = false; m.add(rl);
+      rr = new THREE.Mesh(bGeo, blinkMat); rr.position.set(0.95, 0.8, 2.15); rr.visible = false; m.add(rr);
+    }
 
-    // Holographic Sprite Badge above car
+    // Holographic Sprite Badge above vehicle
     const badgeData = makeBadgeTexture(agent.name, agent.role);
     const spriteMat = new THREE.SpriteMaterial({ map: badgeData.texture, transparent: true, depthTest: false });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(3.8, 0.95, 1);
-    sprite.position.set(0, 2.6, 0);
+    if (isTruck) {
+      sprite.scale.set(4.8, 1.2, 1);
+      sprite.position.set(0, 4.4, 0);
+    } else {
+      sprite.scale.set(3.8, 0.95, 1);
+      sprite.position.set(0, 2.6, 0);
+    }
     m.add(sprite);
 
     m.userData.blinkers = { left: [fl, rl], right: [fr, rr] };

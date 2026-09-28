@@ -160,8 +160,8 @@ export function generateWorld(seed, type = "town") {
   });
 
   // Specialized 3D objects for Elevated Zipper Merge On-Ramp (高架匝道交替通行汇流口)
-  const zipperZ = zs[1] + (zs[2] - zs[1]) * 0.18;
-  add("zipper_gantry", xs[1], zipperZ - 18, {
+  const zipperZ = zs[1] + (zs[2] - zs[1]) * 0.72;
+  add("zipper_gantry", xs[1], zipperZ - 22, {
     mainText: "ON-RAMP ZIPPER MERGE ⫰",
     subText: "高架匝道交替合流 · 1:1 交替通行 · 一车一让",
   });

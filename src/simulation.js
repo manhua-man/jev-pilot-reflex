@@ -1604,4 +1604,8 @@ export class Simulation {
     if (!this.gameManager) return null;
     return this.gameManager.triggerZipperMerge();
   }
+  triggerTruckScenario() {
+    if (!this.gameManager) return null;
+    return this.gameManager.triggerTruckScenario();
+  }
 }

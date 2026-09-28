@@ -197,6 +197,40 @@ export class DriveAudio {
     } catch (_) {}
   }
 
+  playTruckHorn() {
+    this.ensureContext();
+    if (!this.ctx || this.muted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(650, now);
+
+      osc1.type = "sawtooth";
+      osc1.frequency.setValueAtTime(185, now);
+      osc2.type = "sawtooth";
+      osc2.frequency.setValueAtTime(233, now);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.22, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.48);
+      osc2.stop(now + 0.48);
+    } catch (_) {}
+  }
+
   toggleMute() {
     this.ensureContext();
     this.muted = !this.muted;
