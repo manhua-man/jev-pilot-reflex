@@ -238,6 +238,55 @@ function hazardSignTexture() {
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
+
+function makeBadgeTexture(text, role) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 384;
+  canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  const borderColor = role === "cut_in" ? "#f59e0b" : role === "overtake" ? "#06b6d4" : "#a855f7";
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 368, 80, 20);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 26px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 192, 48);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return { texture, canvas, ctx, lastText: text };
+}
+
+function updateBadgeTexture(badgeObj, text, role) {
+  if (badgeObj.lastText === text) return;
+  badgeObj.lastText = text;
+  const ctx = badgeObj.ctx;
+  const borderColor = role === "cut_in" ? "#f59e0b" : role === "overtake" ? "#06b6d4" : "#a855f7";
+
+  ctx.clearRect(0, 0, 384, 96);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 368, 80, 20);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 26px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 192, 48);
+  badgeObj.texture.needsUpdate = true;
+}
 function mergeModel(group) {
   group.updateMatrixWorld(true);
   const batches = new Map();
@@ -1077,16 +1126,30 @@ export class DriveScene {
       .catch((error) => console.warn("Detailed vehicle unavailable", error));
     this.vehicles = new Map();
     this.people = new Map();
+    this.gameVehicles = new Map();
     for (const v of this.sim.traffic) {
       const m = carModel(v.color, v.type === "motorcycle");
       this.vehicles.set(v.id, m);
       this.scene.add(m);
+    }
+    if (this.sim.gameManager?.agents) {
+      for (const agent of this.sim.gameManager.agents) {
+        this.addGameAgentMesh(agent);
+      }
     }
     for (const p of this.sim.pedestrians) {
       const m = personModel(p);
       this.people.set(p.id, m);
       this.scene.add(m);
     }
+
+    // Dynamic Game Interaction Beam
+    const beamGeo = new THREE.BufferGeometry();
+    beamGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0.6, 0, 0, 0.6, 0], 3));
+    this.gameBeamMat = new THREE.LineBasicMaterial({ color: "#f59e0b", transparent: true, opacity: 0.85, depthTest: false });
+    this.gameBeam = new THREE.Line(beamGeo, this.gameBeamMat);
+    this.gameBeam.visible = false;
+    this.scene.add(this.gameBeam);
     const vertices = [0, 0.18, 0];
     for (let k = 0; k <= 40; k++) {
       const a = ((-65 + (k * 130) / 40) * Math.PI) / 180;
@@ -1289,6 +1352,67 @@ export class DriveScene {
     const blinkOn = Math.floor(this.sim.time * 4) % 2 === 0;
     if (this.blinkerLeft) this.blinkerLeft.visible = this.sim.blinker === "left" && blinkOn;
     if (this.blinkerRight) this.blinkerRight.visible = this.sim.blinker === "right" && blinkOn;
+
+    // Render Multi-Agent Game Theory Swarm
+    if (this.sim.gameManager?.agents) {
+      for (const agent of this.sim.gameManager.agents) {
+        let m = this.gameVehicles.get(agent.id);
+        if (!m) {
+          m = this.addGameAgentMesh(agent);
+        }
+        m.position.set(agent.x, 0, agent.z);
+        m.rotation.y = -agent.heading;
+
+        // Dynamic turn blinkers
+        if (m.userData.blinkers) {
+          const lOn = agent.blinker === "left" && blinkOn;
+          const rOn = agent.blinker === "right" && blinkOn;
+          m.userData.blinkers.left.forEach((b) => (b.visible = lOn));
+          m.userData.blinkers.right.forEach((b) => (b.visible = rOn));
+        }
+
+        // Floating badge text
+        if (m.userData.badgeObj) {
+          const badgeText = `${agent.name.split(" ")[0]} · ${agent.statusText}`;
+          updateBadgeTexture(m.userData.badgeObj, badgeText, agent.role);
+        }
+      }
+
+      // Dynamic Game-Theoretic Interaction Beam
+      const adversary =
+        this.sim.gameManager.keyAdversary ||
+        this.sim.gameManager.agents.find((a) => a.role === "cut_in");
+      if (
+        adversary &&
+        Math.hypot(v.x - adversary.x, v.z - adversary.z) < 55
+      ) {
+        this.gameBeam.visible = true;
+        const pos = this.gameBeam.geometry.attributes.position.array;
+        pos[0] = v.x;
+        pos[1] = 0.55;
+        pos[2] = v.z;
+        pos[3] = adversary.x;
+        pos[4] = 0.55;
+        pos[5] = adversary.z;
+        this.gameBeam.geometry.attributes.position.needsUpdate = true;
+
+        if (adversary.ttc < 2.0) {
+          this.gameBeamMat.color.set("#ef4444"); // emergency red
+          this.gameBeamMat.opacity = blinkOn ? 0.95 : 0.4;
+        } else if (
+          adversary.ttc < 4.0 ||
+          adversary.state.includes("cut_in")
+        ) {
+          this.gameBeamMat.color.set("#f59e0b"); // warning amber
+          this.gameBeamMat.opacity = 0.85;
+        } else {
+          this.gameBeamMat.color.set("#38bdf8"); // tactical cyan
+          this.gameBeamMat.opacity = 0.6;
+        }
+      } else {
+        this.gameBeam.visible = false;
+      }
+    }
 
     // Dynamic Rain Particles Falling
     if (this.rainGroup && this.rainGroup.visible) {
@@ -1496,5 +1620,31 @@ export class DriveScene {
       if (this.rainGroup) this.rainGroup.visible = false;
       if (this.headlights) this.headlights.visible = false;
     }
+  }
+  addGameAgentMesh(agent) {
+    const m = carModel(agent.color, false);
+
+    // Amber Turn Indicators (Front & Rear)
+    const blinkMat = new THREE.MeshBasicMaterial({ color: "#f59e0b" });
+    const bGeo = new THREE.BoxGeometry(0.18, 0.12, 0.12);
+    const fl = new THREE.Mesh(bGeo, blinkMat); fl.position.set(-0.95, 0.65, -2.15); fl.visible = false; m.add(fl);
+    const fr = new THREE.Mesh(bGeo, blinkMat); fr.position.set(0.95, 0.65, -2.15); fr.visible = false; m.add(fr);
+    const rl = new THREE.Mesh(bGeo, blinkMat); rl.position.set(-0.95, 0.8, 2.15); rl.visible = false; m.add(rl);
+    const rr = new THREE.Mesh(bGeo, blinkMat); rr.position.set(0.95, 0.8, 2.15); rr.visible = false; m.add(rr);
+
+    // Holographic Sprite Badge above car
+    const badgeData = makeBadgeTexture(agent.name, agent.role);
+    const spriteMat = new THREE.SpriteMaterial({ map: badgeData.texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(3.8, 0.95, 1);
+    sprite.position.set(0, 2.6, 0);
+    m.add(sprite);
+
+    m.userData.blinkers = { left: [fl, rl], right: [fr, rr] };
+    m.userData.badgeObj = { ...badgeData, sprite, lastText: agent.name };
+
+    this.gameVehicles.set(agent.id, m);
+    this.scene.add(m);
+    return m;
   }
 }

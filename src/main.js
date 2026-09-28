@@ -113,6 +113,7 @@ let configured = true,
   uiTime = 0,
   lastNow = performance.now(),
   toastTimer,
+  lastMatrixRender = 0,
   crashHandled = false;
 const keys = new Set(),
   tally = {
@@ -132,9 +133,9 @@ $("app").innerHTML = `
 <div id="minimap" class="minimap glass"><div class="minimap-toolbar" role="toolbar" aria-label="Minimap controls"><button id="map-drag" aria-label="Move minimap" title="Move minimap · drag or use arrow keys">${icon("grip")}</button><div><button id="map-zoom-out" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button><button id="map-zoom-in" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button><button id="map-reset" aria-label="Reset minimap" title="Reset map position, zoom and following">${icon("rotate-ccw")}</button></div></div><canvas id="map-canvas" width="380" height="310" aria-label="Route map. Drag to pan, scroll to zoom, double-click to follow the car."></canvas></div></div>
 <div id="paused-overlay" hidden><div class="glass"><span>${icon("pause")} Paused</span><button id="resume" class="primary">Resume driving</button></div></div>
 <div id="arrival" class="arrival glass" hidden><span class="arrival-mark">${icon("flag")}</span><span class="eyebrow">DESTINATION REACHED</span><h1>You made it.</h1><p id="arrival-summary"></p><button id="next-trip" class="primary">Next drive ${icon("arrow-up-right")}</button><button id="keep-driving" class="subtle">Keep exploring</button></div>
-<div class="bottom-hud"><div class="driver-dock glass"><div class="speed-cluster"><div title="Current speed"><strong id="speed">0</strong><span>km/h</span></div><span class="speed-limit" title="Speed limit"><small>LIMIT</small><b id="speed-limit">50</b></span><div class="blinker-cluster" title="车辆转向指示灯"><span id="blinker-left" class="blinker-icon">⇦</span><span id="blinker-right" class="blinker-icon">⇨</span></div></div><span class="dock-divider"></span><div class="pilot-actions"><button id="autopilot" class="pilot-button" role="switch" aria-checked="false" aria-label="Jev autopilot" title="Engage Jev · J">${icon("sparkles")}<span id="pilot-label">Engage Jev</span><kbd>J</kbd></button><button id="candidates-toggle" class="candidate-button" aria-label="Show steering candidates" aria-pressed="false" title="Show steering candidates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20V3m-3 3 3-3 3 3M12 20C12 14 7 12 3 8m0 3V8h3M12 20c0-6 5-8 9-12m-3 0h3v3"/><circle cx="12" cy="21" r="1" fill="currentColor" stroke="none"/></svg></button><button id="trigger-jaywalk" class="scenario-cutin-btn" title="模拟盲区突发鬼探头 (触发毫秒级 AEB 紧急制动) · 快捷键 E">${icon("zap")}<span>模拟鬼探头</span><kbd>E</kbd></button></div><div id="decision-status"><span id="pilot-state">Free play</span><span id="context-message">WASD to drive · Space to brake</span><span class="cost-total" title="Estimated cost from Jev-reported token usage and configured pricing."><span id="cost-label">Session</span> <strong id="cost">$0.000000</strong></span></div><span class="dock-divider"></span><div class="dock-tools" role="group" aria-label="View and driving controls"><button id="audio-toggle" class="dock-btn" title="切换具身空间声浪 · 快捷键 M" aria-label="Toggle Audio">${icon("volume-2")}</button><button id="dual-brain-toggle" class="active" title="切换双脑解耦实时遥测监视器 · 快捷键 B" aria-label="双脑遥测监视器">${icon("sparkles")}<span id="db-btn-text">双脑</span><kbd>B</kbd></button><button id="camera" title="Change camera · C" aria-label="Change camera">${icon("video")}<span id="camera-name">Chase</span></button><button id="scene-json" aria-label="Inspect live JSON" title="Inspect live JSON">${icon("braces")}</button><button id="fullscreen" aria-label="Enter fullscreen" title="Fullscreen">${icon("maximize")}</button><span class="divider"></span><button id="pause" aria-label="Pause simulation" title="Pause · P">${icon("pause")}</button><button id="sign-out" hidden aria-label="Sign out" title="Sign out">${icon("log-out")}</button></div></div></div>
+<div class="bottom-hud"><div class="driver-dock glass"><div class="speed-cluster"><div title="Current speed"><strong id="speed">0</strong><span>km/h</span></div><span class="speed-limit" title="Speed limit"><small>LIMIT</small><b id="speed-limit">50</b></span><div class="blinker-cluster" title="车辆转向指示灯"><span id="blinker-left" class="blinker-icon">⇦</span><span id="blinker-right" class="blinker-icon">⇨</span></div></div><span class="dock-divider"></span><div class="pilot-actions"><button id="autopilot" class="pilot-button" role="switch" aria-checked="false" aria-label="Jev autopilot" title="Engage Jev · J">${icon("sparkles")}<span id="pilot-label">Engage Jev</span><kbd>J</kbd></button><button id="candidates-toggle" class="candidate-button" aria-label="Show steering candidates" aria-pressed="false" title="Show steering candidates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 20V3m-3 3 3-3 3 3M12 20C12 14 7 12 3 8m0 3V8h3M12 20c0-6 5-8 9-12m-3 0h3v3"/><circle cx="12" cy="21" r="1" fill="currentColor" stroke="none"/></svg></button><button id="trigger-jaywalk" class="scenario-cutin-btn" title="模拟盲区突发鬼探头 (触发毫秒级 AEB 紧急制动) · 快捷键 E">${icon("zap")}<span>模拟鬼探头</span><kbd>E</kbd></button><button id="trigger-cutin" class="scenario-cutin-btn game-cutin-btn" title="触发周围智能车辆激进加塞 (多车博弈推演) · 快捷键 G">${icon("zap")}<span>激进加塞博弈</span><kbd>G</kbd></button></div><div id="decision-status"><span id="pilot-state">Free play</span><span id="context-message">WASD to drive · Space to brake</span><span class="cost-total" title="Estimated cost from Jev-reported token usage and configured pricing."><span id="cost-label">Session</span> <strong id="cost">$0.000000</strong></span></div><span class="dock-divider"></span><div class="dock-tools" role="group" aria-label="View and driving controls"><button id="audio-toggle" class="dock-btn" title="切换具身空间声浪 · 快捷键 M" aria-label="Toggle Audio">${icon("volume-2")}</button><button id="dual-brain-toggle" class="active" title="切换双脑解耦实时遥测监视器 · 快捷键 B" aria-label="双脑遥测监视器">${icon("sparkles")}<span id="db-btn-text">双脑</span><kbd>B</kbd></button><button id="camera" title="Change camera · C" aria-label="Change camera">${icon("video")}<span id="camera-name">Chase</span></button><button id="scene-json" aria-label="Inspect live JSON" title="Inspect live JSON">${icon("braces")}</button><button id="fullscreen" aria-label="Enter fullscreen" title="Fullscreen">${icon("maximize")}</button><span class="divider"></span><button id="pause" aria-label="Pause simulation" title="Pause · P">${icon("pause")}</button><button id="sign-out" hidden aria-label="Sign out" title="Sign out">${icon("log-out")}</button></div></div></div>
 <div id="aeb-alert" class="aeb-alert-badge" hidden><div class="aeb-icon-pulse">⚠️</div><div class="aeb-info"><strong class="aeb-title">AEB 紧急制动已触发 (COLLISION PREVENTED)</strong><div class="aeb-metrics"><span id="aeb-ttc-label">TTC: 0.8s</span><span class="metric-sep">|</span><span id="aeb-decel-label">减速度: -8.5 m/s²</span><span class="metric-sep">|</span><span>Jev 1.5ms 毫秒级安全闸闭环</span></div></div></div>
-<aside id="dual-brain-panel" class="dual-brain-panel glass" aria-label="双脑解耦实时遥测监视器"><div class="panel-header"><div class="panel-title"><span class="brain-glow-dot"></span><strong>智驾双脑解耦协同监视器</strong><span class="arch-badge">System 1/2 Dual-Brain</span></div><button id="close-dual-brain" class="panel-close" title="收起监视器">✕</button></div><div class="dual-brain-grid"><div class="brain-card system1-card"><div class="card-header"><div class="card-badge s1-badge">🧠 System 1: Jev Reflex 快思考</div><div class="frequency-pill s1-pill">60 Hz · 1.5ms 零延迟</div></div><div class="telemetry-rows"><div class="telemetry-row"><span class="row-label">决策机制</span><span class="row-val highlight">物理流形多候选打分 (本地离线)</span></div><div class="telemetry-row"><span class="row-label">候选路径流形</span><span class="row-val" id="s1-candidates">15 条 (前向/变道/避让)</span></div><div class="telemetry-row"><span class="row-label">当前最优得分</span><span class="row-val" id="s1-score">Score 0.985 (车道居中)</span></div><div class="telemetry-row"><span class="row-label">地面物理附着力</span><span class="row-val safe" id="s1-friction">μ = 0.90 (标称干燥)</span></div><div class="telemetry-row"><span class="row-label">碰撞时间 (TTC)</span><span class="row-val safe" id="s1-ttc">&gt; 5.0 s (标称安全)</span></div><div class="telemetry-row"><span class="row-label">阿克曼转向角</span><span class="row-val" id="s1-steer">0.000 rad</span></div><div class="telemetry-row"><span class="row-label">物理制动阻尼</span><span class="row-val" id="s1-brake">0.0% (巡航开环)</span></div></div><div class="card-footer"><span class="safety-indicator nominal" id="s1-status">● 安全闸状态: 闭环护航 (100% 物理兜底)</span></div></div><div class="brain-card system2-card"><div class="card-header"><div class="card-badge s2-badge">🌐 System 2: VLM 多模态慢思考</div><div class="frequency-pill s2-pill">1.5 Hz · 650ms 异步思考</div></div><div class="vlm-monitor"><div class="vlm-perception-box"><span class="box-title">前视多模态场景语义理解:</span><p id="s2-perception" class="vlm-text">双向 4 车道主干道巡航，路面标线清晰（中央双黄线、分道白虚线）。前向视野良好，当前车道居中度 98.4%。</p></div><div class="vlm-intent-box"><span class="box-title">长程战略决策与意图规划:</span><p id="s2-intent" class="vlm-text">维持标称巡航车速（目标 65 km/h），持续对两侧盲区与交织车流执行被动语义监测。</p></div><div class="vlm-lag-box"><div class="lag-bar-container"><span class="lag-label">大模型慢思考推理进度</span><div class="lag-progress-bar"><div id="vlm-lag-progress" class="lag-fill"></div></div></div><span class="lag-note">※ 慢思考异步旁路运行，即使推理超时亦不影响底座 1.5ms 安全刹车</span></div></div><div class="card-footer"><span class="vlm-indicator sync" id="s2-status">● 意图下发通道: 异步建议态 (Asynchronous Hint)</span></div></div></div></aside>
+<aside id="dual-brain-panel" class="dual-brain-panel glass" aria-label="双脑解耦实时遥测监视器"><div class="panel-header"><div class="panel-title"><span class="brain-glow-dot"></span><strong>智驾双脑解耦协同监视器</strong><span class="arch-badge">System 1/2 Dual-Brain</span></div><button id="close-dual-brain" class="panel-close" title="收起监视器">✕</button></div><div class="dual-brain-grid"><div class="brain-card system1-card"><div class="card-header"><div class="card-badge s1-badge">🧠 System 1: Jev Reflex 快思考</div><div class="frequency-pill s1-pill">60 Hz · 1.5ms 零延迟</div></div><div class="telemetry-rows"><div class="telemetry-row"><span class="row-label">决策机制</span><span class="row-val highlight">物理流形多候选打分 (本地离线)</span></div><div class="telemetry-row"><span class="row-label">候选路径流形</span><span class="row-val" id="s1-candidates">15 条 (前向/变道/避让)</span></div><div class="telemetry-row"><span class="row-label">当前最优得分</span><span class="row-val" id="s1-score">Score 0.985 (车道居中)</span></div><div class="telemetry-row"><span class="row-label">地面物理附着力</span><span class="row-val safe" id="s1-friction">μ = 0.90 (标称干燥)</span></div><div class="telemetry-row"><span class="row-label">碰撞时间 (TTC)</span><span class="row-val safe" id="s1-ttc">&gt; 5.0 s (标称安全)</span></div><div class="telemetry-row"><span class="row-label">阿克曼转向角</span><span class="row-val" id="s1-steer">0.000 rad</span></div><div class="telemetry-row"><span class="row-label">物理制动阻尼</span><span class="row-val" id="s1-brake">0.0% (巡航开环)</span></div></div><div class="card-footer"><span class="safety-indicator nominal" id="s1-status">● 安全闸状态: 闭环护航 (100% 物理兜底)</span></div></div><div class="brain-card system2-card"><div class="card-header"><div class="card-badge s2-badge">🌐 System 2: VLM 多模态慢思考</div><div class="frequency-pill s2-pill">1.5 Hz · 650ms 异步思考</div></div><div class="vlm-monitor"><div class="vlm-perception-box"><span class="box-title">前视多模态场景语义理解:</span><p id="s2-perception" class="vlm-text">双向 4 车道主干道巡航，路面标线清晰（中央双黄线、分道白虚线）。前向视野良好，当前车道居中度 98.4%。</p></div><div class="vlm-intent-box"><span class="box-title">长程战略决策与意图规划:</span><p id="s2-intent" class="vlm-text">维持标称巡航车速（目标 65 km/h），持续对两侧盲区与交织车流执行被动语义监测。</p></div><div class="vlm-lag-box"><div class="lag-bar-container"><span class="lag-label">大模型慢思考推理进度</span><div class="lag-progress-bar"><div id="vlm-lag-progress" class="lag-fill"></div></div></div><span class="lag-note">※ 慢思考异步旁路运行，即使推理超时亦不影响底座 1.5ms 安全刹车</span></div></div><div class="card-footer"><span class="vlm-indicator sync" id="s2-status">● 意图下发通道: 异步建议态 (Asynchronous Hint)</span></div></div><div class="brain-card game-matrix-card"><div class="card-header"><div class="card-badge game-badge">🎯 Reflex 纳什博弈多目标轨迹收益矩阵</div><div class="frequency-pill game-pill">60 Hz · 实时效用评估</div></div><div class="matrix-adversary-bar" id="matrix-adversary-bar"><span class="adv-label">博弈目标:</span><strong class="adv-val" id="adv-name">NPC-01 (激进加塞车)</strong><span class="adv-tag" id="adv-status">⚠️ 强行加塞中</span><span class="adv-metric" id="adv-ttc">TTC: 2.1s</span><span class="adv-metric" id="adv-pcommit">加塞意图: 85%</span></div><div class="payoff-matrix-container"><table class="payoff-table"><thead><tr><th style="text-align: left;">候选动作流形</th><th>J<sub>safe</sub></th><th>J<sub>eff</sub></th><th>J<sub>comf</sub></th><th>𝔼[U]</th><th>博弈裁决</th></tr></thead><tbody id="payoff-table-body"></tbody></table></div><div class="matrix-rationale-box"><span class="rationale-title">Reflex 纳什均衡推演决断:</span><p id="matrix-rationale-text" class="rationale-text">多车博弈流已就绪，实时计算中...</p></div></div></div></aside>
 <dialog id="crash-dialog" aria-labelledby="crash-title" aria-describedby="crash-description"><span class="crash-symbol">${icon("x")}</span><span class="eyebrow">DRIVE ENDED</span><h1 id="crash-title">Game over.</h1><p id="crash-description"></p><div class="crash-stats"><div><strong id="crash-speed"></strong><span>km/h at impact</span></div><div><strong id="crash-distance"></strong><span>meters driven</span></div></div><button id="retry-drive" class="primary">${icon("rotate-ccw")} Restart drive</button><button id="crash-new-world" class="secondary">Try a new world ${icon("arrow-up-right")}</button></dialog>
 <dialog id="credit-dialog" aria-labelledby="credit-title"><span class="eyebrow">THANKS FOR TAKING A DRIVE</span><h2 id="credit-title">That's your free lap.</h2><p>Your $0.25 of Jev play credit has been used. You can keep exploring with manual controls.</p><button id="credit-close" class="primary">Keep driving manually</button><a href="https://standardagents.ai/" target="_blank" rel="noopener noreferrer">Explore Standard Agents ↗</a></dialog>
 <div id="toast" role="status" hidden></div>
@@ -427,6 +428,10 @@ $("fork-choose-right")?.addEventListener("click", () => {
 $("trigger-jaywalk")?.addEventListener("click", () => {
   sim.triggerJaywalker();
 });
+$("trigger-cutin")?.addEventListener("click", () => {
+  sim.triggerCutIn();
+  audio.playAebAlert();
+});
 $("dual-brain-toggle")?.addEventListener("click", () => {
   const p = $("dual-brain-panel");
   if (p) {
@@ -522,6 +527,10 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyC") changeCamera();
   if (e.code === "KeyP") togglePause();
   if (e.code === "KeyE") sim.triggerJaywalker();
+  if (e.code === "KeyG") {
+    sim.triggerCutIn();
+    audio.playAebAlert();
+  }
   if (e.code === "KeyB") {
     const p = $("dual-brain-panel");
     if (p) {
@@ -1081,6 +1090,64 @@ function updateDualBrainMonitor(sim, lastDecision) {
       }
       if (s2Status) {
         s2Status.textContent = "● 意图下发通道: 异步建议态 (Asynchronous Hint · 1.5Hz)";
+      }
+    }
+  }
+
+  // Game Theory Multi-Objective Payoff Matrix Telemetry
+  const matrix = sim.gameManager?.payoffMatrix;
+  const now = performance.now();
+  if (matrix) {
+    const adv = matrix.adversary;
+    const nameEl = $("adv-name");
+    const statusEl = $("adv-status");
+    const ttcEl = $("adv-ttc");
+    const pCommitEl = $("adv-pcommit");
+
+    if (nameEl) nameEl.textContent = adv.name;
+    if (statusEl) statusEl.textContent = adv.statusText;
+    if (ttcEl) ttcEl.textContent = `TTC: ${adv.ttc.toFixed(1)}s`;
+    if (pCommitEl) pCommitEl.textContent = `加塞意图: ${adv.pCommit}%`;
+
+    const rationaleEl = $("matrix-rationale-text");
+    if (rationaleEl) {
+      rationaleEl.textContent = matrix.decisionRationale;
+    }
+
+    if (now - lastMatrixRender > 90) {
+      lastMatrixRender = now;
+      const tbody = $("payoff-table-body");
+      if (tbody) {
+        tbody.innerHTML = matrix.rows
+          .map((row) => {
+            const isBest = row.isBest;
+            const rowClass = isBest ? "best-action-row" : "";
+            const badgeHtml = isBest
+              ? `<span class="nash-best-badge">⭐ 纳什最优</span>`
+              : `<span class="nash-status-tag">${row.status}</span>`;
+            return `<tr class="${rowClass}">
+            <td class="action-cell">${row.name}</td>
+            <td class="score-cell safe-score">${row.jSafe.toFixed(1)}</td>
+            <td class="score-cell eff-score">${row.jEff.toFixed(1)}</td>
+            <td class="score-cell comf-score">${row.jComf.toFixed(1)}</td>
+            <td class="score-cell exp-score">${row.expectedU.toFixed(1)}</td>
+            <td class="verdict-cell">${badgeHtml}</td>
+          </tr>`;
+          })
+          .join("");
+      }
+    }
+
+    // Reflect adversary cut-in action in S2 VLM text
+    if (adv.statusText.includes("加塞") || adv.ttc < 3.0) {
+      if (s2Perception) {
+        s2Perception.textContent = `⚠️ 多车博弈检测：${adv.name} 正在向自车前方车道强行压线加塞！横向净距 ${Math.abs(adv.lateralGap).toFixed(1)}m，TTC ${adv.ttc.toFixed(1)}s。`;
+      }
+      if (s2Intent) {
+        s2Intent.textContent = `博弈裁决建议：预测对手加塞置信度 ${adv.pCommit}%，建议 Reflex 执行 [${matrix.bestAction.name}] (综合效用 ${matrix.bestAction.expectedU})，平滑化解冲突。`;
+      }
+      if (s2Status) {
+        s2Status.textContent = "● 意图下发通道: 纳什多车博弈态 (Multi-Agent Game Override)";
       }
     }
   }

@@ -44,6 +44,7 @@ export { physics } from "./planning.js";
 import { createDrivingPlan, recoveryBlocked } from "./driving-plan.js";
 import { updateCourtesy } from "./courtesy.js";
 import { routeFromLocation, routesFromLocation } from "./routing.js";
+import { GameTrafficManager } from "./game-theory.js";
 
 const REROUTE_DISTANCE_M = 30;
 const REROUTE_DELAY_S = 6;
@@ -163,6 +164,7 @@ export class Simulation {
         height: 1.7,
       });
     }
+    this.gameManager = new GameTrafficManager(this);
   }
   spawnTraffic(i, distant = false) {
     const highway = this.world.type === "highway";
@@ -428,11 +430,11 @@ export class Simulation {
     };
   }
   leadGap(v) {
-    return leadVehicle(v, [...this.traffic, this.player])?.gap ?? Infinity;
+    return leadVehicle(v, [...this.traffic, ...(this.gameManager?.agents || []), this.player])?.gap ?? Infinity;
   }
   speedEnvelope(v) {
     const rule = this.rule(v),
-      lead = leadVehicle(v, [...this.traffic, this.player]),
+      lead = leadVehicle(v, [...this.traffic, ...(this.gameManager?.agents || []), this.player]),
       gap = lead?.gap ?? Infinity;
     let max = Math.min(this.world.theme.limit, routeSpeedLimit(v, v.s)),
       reason = null;
@@ -484,8 +486,10 @@ export class Simulation {
   }
   step(dt) {
     if (this.paused || this.crash) return;
+    if (this.gameManager) this.gameManager.update(dt);
+    const dynamicObjects = [...this.traffic, ...this.pedestrians, ...(this.gameManager?.agents || [])];
     const previous = new Map(
-      [...this.traffic, ...this.pedestrians].map((o) => [
+      dynamicObjects.map((o) => [
         o.id,
         {
           pose: collisionPose(o),
@@ -679,7 +683,7 @@ export class Simulation {
       ...this.world.objects
         .filter((o) => o.type === "building")
         .map((object) => ({ object })),
-      ...[...this.traffic, ...this.pedestrians].map((object) => ({
+      ...dynamicObjects.map((object) => ({
         object,
         // Newly spawned traffic and initial pedestrian placement are teleports.
         previous:
@@ -1384,6 +1388,7 @@ export class Simulation {
       buildings = this.world.objects.filter((o) => o.type === "building"),
       all = [
         ...this.traffic,
+        ...(this.gameManager?.agents || []),
         ...this.pedestrians,
         ...this.world.objects.filter((o) => o.type !== "parcel"),
       ];
@@ -1590,5 +1595,9 @@ export class Simulation {
       this.event("气象切换: 标称晴朗干燥 (摩擦系数 μ=0.90)", "info");
     }
     return this.weather;
+  }
+  triggerCutIn() {
+    if (!this.gameManager) return null;
+    return this.gameManager.triggerCutIn();
   }
 }

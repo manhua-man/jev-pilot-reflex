@@ -1564,7 +1564,7 @@ body.crashed .world-picker {
   position: fixed;
   right: 20px;
   bottom: 84px;
-  width: 440px;
+  width: 500px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 120px);
   background: rgba(15, 23, 42, 0.92);
@@ -1810,4 +1810,154 @@ body.crashed .world-picker {
 }
 #audio-toggle:not(.muted) {
   color: #0284c7;
+}
+
+/* ==========================================================================
+   Multi-Agent Game Theory Traffic & Payoff Matrix
+   ========================================================================== */
+
+.game-cutin-btn {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.28)) !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
+}
+.game-cutin-btn:hover {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.32), rgba(217, 119, 6, 0.45)) !important;
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+}
+
+.game-matrix-card {
+  border-left: 3px solid #f59e0b;
+  background: rgba(15, 23, 42, 0.75);
+}
+.game-badge {
+  color: #fbbf24;
+}
+.game-pill {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+.matrix-adversary-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(30, 41, 59, 0.7);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+.adv-label {
+  color: #94a3b8;
+}
+.adv-val {
+  color: #f8fafc;
+  font-weight: 700;
+}
+.adv-tag {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.adv-metric {
+  color: #38bdf8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.payoff-matrix-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.5);
+  margin-bottom: 8px;
+}
+.payoff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  line-height: 1.45;
+}
+.payoff-table th {
+  padding: 6px 8px;
+  background: rgba(30, 41, 59, 0.7);
+  color: #94a3b8;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+.payoff-table td {
+  padding: 6px 8px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+.action-cell {
+  color: #f8fafc;
+  font-weight: 600;
+  text-align: left !important;
+}
+.score-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.safe-score {
+  color: #4ade80;
+}
+.eff-score {
+  color: #38bdf8;
+}
+.comf-score {
+  color: #c084fc;
+}
+.exp-score {
+  color: #fbbf24;
+}
+.best-action-row {
+  background: rgba(16, 185, 129, 0.15) !important;
+  box-shadow: inset 3px 0 0 #10b981;
+}
+.best-action-row td {
+  color: #ffffff;
+}
+.nash-best-badge {
+  background: #059669;
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-block;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.45);
+}
+.nash-status-tag {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.matrix-rationale-box {
+  background: rgba(15, 23, 42, 0.6);
+  padding: 7px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.18);
+}
+.rationale-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  display: block;
+  margin-bottom: 2px;
+}
+.rationale-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #cbd5e1;
+  margin: 0;
 }
