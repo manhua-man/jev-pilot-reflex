@@ -851,57 +851,10 @@ export class DriveScene {
         hazardMesh.position.set(o.x, 2.4, o.z + 4.15);
         hazardMesh.rotation.y = Math.PI;
         s.add(hazardMesh);
-        continue;
-      }
-      if (o.type === "zipper_gantry") {
-        for (const xOff of [-14, 14]) {
-          cyl(s, 0.24, 9.2, o.x + xOff, 4.6, o.z, "#475569");
-        }
-        box(s, 28.5, 0.35, 0.35, o.x, 8.4, o.z, "#475569");
-        box(s, 28.5, 0.35, 0.35, o.x, 9.2, o.z, "#475569");
-        const gantryMesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(12.5, 4.5),
-          new THREE.MeshBasicMaterial({
-            map: zipperGuideSign({
-              main: o.mainText || "ON-RAMP ZIPPER MERGE ⫰",
-              sub: o.subText || "高架匝道合流口 · 1:1 交替通行",
-            }),
-            side: THREE.DoubleSide,
-          }),
-        );
-        gantryMesh.position.set(o.x, 7.8, o.z);
-        gantryMesh.rotation.y = Math.PI;
-        s.add(gantryMesh);
-        continue;
-      }
-      if (o.type === "zipper_ramp_bridge") {
-        const rampLen = o.length || 70;
-        const rampW = o.rampWidth || 5.2;
-        const numSegs = 14;
-        const segLen = rampLen / numSegs;
-        const startH = o.startHeight || 5.5;
-        const endH = o.endHeight || 0.15;
 
-        for (let i = 0; i < numSegs; i++) {
-          const t = (i + 0.5) / numSegs;
-          const segX = o.x - t * 4.2;
-          const segY = (1 - t) * startH + t * endH;
-          const segZ = (o.z - rampLen / 2) + (i + 0.5) * segLen;
-
-          // Road surface slab
-          box(s, rampW, 0.35, segLen * 1.02, segX, segY, segZ, "#262626");
-
-          // Guardrails along both sides of ramp
-          box(s, 0.12, 0.75, segLen * 1.02, segX - rampW / 2 + 0.08, segY + 0.45, segZ, "#cbd5e1");
-          box(s, 0.12, 0.75, segLen * 1.02, segX + rampW / 2 - 0.08, segY + 0.45, segZ, "#cbd5e1");
-
-          // Concrete bridge support piers for elevated segments
-          if (segY > 1.2 && i % 2 === 0) {
-            cyl(s, 0.55, segY, segX, segY / 2, segZ, "#94a3b8", 16);
-            box(s, rampW + 0.8, 0.45, 1.2, segX, segY - 0.25, segZ, "#64748b");
-            box(s, 2.2, 0.3, 2.2, segX, 0.15, segZ, "#475569");
-          }
-        }
+        // Concrete Jersey Barrier dividing wall extending downstream between diverging ramps
+        box(s, 0.6, 0.9, 28, o.x, 0.45, o.z + 18.5, "#cbd5e1");
+        box(s, 0.9, 0.25, 28, o.x, 0.125, o.z + 18.5, "#94a3b8");
         continue;
       }
       if (o.type === "zipper_road_marking") {

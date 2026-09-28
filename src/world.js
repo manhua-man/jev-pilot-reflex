@@ -141,39 +141,22 @@ export function generateWorld(seed, type = "town") {
   const add = (type, x, z, props = {}) =>
     objects.push({ id: `${type}-${id++}`, type, x, z, ...props });
 
-  // Add specialized 3D objects for the Fork Road
-  add("fork_gantry", xs[1], forkZ - 22, {
+  // Add specialized 3D objects for the Fork Road (分岔路 / Y型分流)
+  add("fork_gantry", xs[1], forkZ - 24, {
     approach: 0,
     leftText: "AIRPORT EXPWY ↖",
     leftSub: "机场快速路 · 科技城",
     rightText: "DOWNTOWN CBD ↗",
     rightSub: "中心商务区 · 金融街",
   });
-  add("fork_gore", xs[1], forkZ + 8, {
+  add("fork_gore", xs[1], forkZ + 20, {
     leftTarget: { x: forkLeft.x, z: forkLeft.z },
     rightTarget: { x: forkRight.x, z: forkRight.z },
     length: 34,
     width: 15,
   });
-  add("crash_barrels", xs[1], forkZ + 8, {
-    count: 4,
-  });
-
-  // Specialized 3D objects for Elevated Zipper Merge On-Ramp (高架匝道交替通行汇流口)
-  const zipperZ = zs[1] + (zs[2] - zs[1]) * 0.72;
-  add("zipper_gantry", xs[1], zipperZ - 22, {
-    mainText: "ON-RAMP ZIPPER MERGE ⫰",
-    subText: "高架匝道交替合流 · 1:1 交替通行 · 一车一让",
-  });
-  add("zipper_ramp_bridge", xs[1] + 11.0, zipperZ, {
-    mainX: xs[1],
-    length: 70,
-    rampWidth: 5.2,
-    startHeight: 5.5,
-    endHeight: 0.15,
-  });
-  add("zipper_road_marking", xs[1] + 5.5, zipperZ + 12, {
-    length: 36,
+  add("crash_barrels", xs[1], forkZ + 26, {
+    count: 6,
   });
   for (let j = 0; j < n - 1; j++)
     for (let i = 0; i < n - 1; i++) {
