@@ -166,6 +166,11 @@ export class DriveAudio {
     } catch (_) {}
   }
 
+  playAebAlert() {
+    this.ensureContext();
+    this.playAebBeep();
+  }
+
   playZipperChime() {
     this.ensureContext();
     if (!this.ctx || this.muted) return;

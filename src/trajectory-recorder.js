@@ -31,7 +31,7 @@ export class TrajectoryRecorder {
     }
   }
 
-  update(time) {
+  update(time, vlaInfo = null) {
     if (!this.isRecording || this.sim.paused || this.sim.crash) return;
     if (time - this.lastSampleTime < this.sampleInterval) return;
     this.lastSampleTime = time;
@@ -55,6 +55,12 @@ export class TrajectoryRecorder {
     const sample = {
       id: this.samples.length,
       t: Number(time.toFixed(3)),
+      // VLA Language Instruction & Intent Context
+      vla: vlaInfo || {
+        prompt: "标准自主巡航",
+        intentId: 0,
+        isMalicious: false,
+      },
       // 1. Ego State Features (S_t)
       state: {
         speed: Number(v.speed.toFixed(3)),

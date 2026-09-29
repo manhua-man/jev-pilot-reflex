@@ -99,7 +99,7 @@ export class NeuralPolicy {
     ];
   }
 
-  predict(sim, gameManager) {
+  predict(sim, gameManager, vlaInfo = null) {
     const t0 = performance.now();
     const x = this.extractFeatures(sim, gameManager);
 
@@ -124,7 +124,7 @@ export class NeuralPolicy {
     // Forward pass Layer 3 (Tanh for steering, Sigmoid/Linear for speed)
     let rawSteer = this.b3[0];
     for (let j = 0; j < 16; j++) rawSteer += this.w3[0][j] * h2[j];
-    const steer = Math.tanh(rawSteer);
+    let steer = Math.tanh(rawSteer);
 
     let rawSpeed = this.b3[1];
     for (let j = 0; j < 16; j++) rawSpeed += this.w3[1][j] * h2[j];
@@ -133,6 +133,24 @@ export class NeuralPolicy {
     const nav = sim.navigation();
     const targetLimit = nav.speed_limit_mps ?? 16.6;
     let targetVelocity = targetLimit * speedRatio;
+
+    // VLA Language Conditioning
+    if (vlaInfo) {
+      if (vlaInfo.intentId === 1) { // ↖ 进机场高速 (左匝道)
+        steer = Math.max(-0.6, steer - 0.12);
+        targetVelocity = Math.max(targetVelocity, 17.0);
+      } else if (vlaInfo.intentId === 2) { // ↗ 进金融街 (右匝道)
+        steer = Math.min(0.6, steer + 0.12);
+        targetVelocity = Math.min(targetVelocity, 14.0);
+      } else if (vlaInfo.intentId === 3) { // ⚡ 左变道超车
+        steer = Math.max(-0.55, steer - 0.16);
+        targetVelocity = Math.min(22.0, targetVelocity * 1.25);
+      } else if (vlaInfo.intentId === 4) { // 🛡️ 防御礼让
+        targetVelocity = Math.max(6.0, targetVelocity * 0.65);
+      } else if (vlaInfo.isMalicious) { // ⚠️ 恶意指令攻击
+        targetVelocity = 30.0; // 强制输出极高油门 (等待 Jev 物理盾拦截)
+      }
+    }
 
     // Safety constraint: If TTC is critical or hazard detected, scale down
     const adv = gameManager?.keyAdversary;
