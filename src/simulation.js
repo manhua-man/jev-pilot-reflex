@@ -1611,23 +1611,35 @@ export class Simulation {
     }
     return this.weather;
   }
+  clearJaywalkers() {
+    this.pedestrians = this.pedestrians.filter((p) => !p.isJaywalker);
+    if (!this.vlaController?.maliciousActive) {
+      this.aebActive = false;
+      this.aebTimer = 0;
+    }
+  }
   triggerCutIn() {
+    this.clearJaywalkers();
     if (!this.gameManager) return null;
     return this.gameManager.triggerCutIn();
   }
   triggerZipperMerge() {
+    this.clearJaywalkers();
     if (!this.gameManager) return null;
     return this.gameManager.triggerZipperMerge();
   }
   triggerTruckScenario() {
+    this.clearJaywalkers();
     if (!this.gameManager) return null;
     return this.gameManager.triggerTruckScenario();
   }
   triggerConstruction() {
+    this.clearJaywalkers();
     if (!this.gameManager) return null;
     return this.gameManager.triggerConstructionScenario();
   }
   triggerRoundabout() {
+    this.clearJaywalkers();
     if (!this.gameManager) return null;
     return this.gameManager.triggerRoundaboutScenario();
   }

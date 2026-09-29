@@ -27,6 +27,10 @@ export class GameTrafficManager {
     this.initSwarm();
   }
 
+  initAgents() {
+    return this.initSwarm();
+  }
+
   initSwarm() {
     this.agents = [];
     const player = this.sim.player;
@@ -496,7 +500,21 @@ export class GameTrafficManager {
    * Computes J_safe, J_eff, J_comf, and Expected Game Utility E[U] for all 5 candidate actions
    */
   evaluatePayoffMatrix(player) {
-    const adversary = this.agents.find(a => a.role === "cut_in" || a.state.includes("cut_in")) || this.agents[0];
+    const adversary = this.agents.find(a => a.role === "cut_in" || a.state?.includes("cut_in")) || this.agents[0];
+    if (!adversary) {
+      return {
+        matrix: [
+          { id: "keep_lane", name: "保持车道·平稳巡航", jSafe: 98, jEff: 95, jComf: 98, expectedU: 97.2, status: "标称均衡" },
+          { id: "left_evade", name: "微幅左避让 (0.4m)", jSafe: 95, jEff: 92, jComf: 90, expectedU: 93.3, status: "路况安全" },
+          { id: "speed_up", name: "提速封堵加塞 (封死路权)", jSafe: 90, jEff: 99, jComf: 88, expectedU: 92.2, status: "路况畅通" },
+          { id: "defensive_yield", name: "纳什防御礼让 (主动减速)", jSafe: 99, jEff: 80, jComf: 92, expectedU: 92.5, status: "从容跟车" },
+          { id: "emergency_brake", name: "物理底线紧急制动 (-8.5m/s²)", jSafe: 99, jEff: 10, jComf: 15, expectedU: 59.8, status: "非必要制动" },
+        ],
+        bestAction: "keep_lane",
+        pCommit: 0.0,
+        pYield: 1.0,
+      };
+    }
     const friction = this.sim.roadFriction || 0.9;
     const speed = player.speed;
     const speedLimit = 16.6; // 60 km/h
@@ -771,6 +789,16 @@ export class GameTrafficManager {
 
   evaluateZipperPayoffMatrix(player) {
     const adversary = this.keyAdversary || this.agents.find(a => a.role === "zipper_r1") || this.agents[0];
+    if (!adversary) {
+      return {
+        matrix: [
+          { id: "yield_slot", name: "交替通行·礼让右侧车辆切入", jSafe: 98, jEff: 95, jComf: 95, expectedU: 96.5, status: "标称汇流" },
+        ],
+        bestAction: "yield_slot",
+        pCommit: 0.0,
+        pYield: 1.0,
+      };
+    }
     const friction = this.sim.roadFriction || 0.9;
     const speed = player.speed;
 
@@ -1006,6 +1034,14 @@ export class GameTrafficManager {
 
   evaluateTruckPayoffMatrix(player) {
     const truck = this.agents.find(a => a.role === "truck") || this.agents[0];
+    if (!truck) {
+      return {
+        matrix: [
+          { id: "maintain_distance", name: "稳态跟车·保持安全车距", jSafe: 98, jEff: 95, jComf: 95, expectedU: 96.5, status: "标称跟车" },
+        ],
+        bestAction: "maintain_distance",
+      };
+    }
     const leftCar = this.agents.find(a => a.role === "truck_oncoming");
     const friction = this.sim.roadFriction || 0.9;
     const speed = player.speed;

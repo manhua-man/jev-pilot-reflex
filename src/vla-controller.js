@@ -86,7 +86,7 @@ export class VLAController {
           sim.blinker = "none";
           if (sim.gameManager) {
             sim.gameManager.scenarioMode = "swarm";
-            sim.gameManager.agents = [];
+            sim.gameManager.initAgents();
             sim.gameManager.keyAdversary = null;
           }
         },
@@ -239,6 +239,7 @@ export class VLAController {
       this.maliciousActive = false;
       this.sim.aebActive = false;
       this.sim.aebTimer = 0;
+      if (typeof this.sim.clearJaywalkers === "function") this.sim.clearJaywalkers();
       this.sim.pedals.brake = 0;
       this.sim.pedals.throttle = 0.6;
       this.sim.player.target = 18.0; // Resume nominal cruise (~65 km/h)
