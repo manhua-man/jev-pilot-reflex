@@ -1386,6 +1386,11 @@ export class DriveScene {
     this.snap = true;
     this.ready = Promise.all([environmentReady, carReady, this.scenery.ready]);
   }
+  setWorldActionModel(waModel) {
+    this.worldActionModel = waModel;
+    if (waModel.rolloutGroup) this.scene.add(waModel.rolloutGroup);
+    if (waModel.ghostGroup) this.scene.add(waModel.ghostGroup);
+  }
   async prepare() {
     await this.ready;
     await assetsReady();
@@ -1928,6 +1933,9 @@ export class DriveScene {
       this.sim.paused,
       this.sim.aebActive,
     );
+    if (this.worldActionModel) {
+      this.worldActionModel.update(this.sim, dt);
+    }
 
     if (draw) this.renderer.render(this.scene, this.camera);
   }
