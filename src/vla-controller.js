@@ -84,6 +84,11 @@ export class VLAController {
         isMalicious: false,
         execute: (sim) => {
           sim.blinker = "none";
+          if (sim.gameManager) {
+            sim.gameManager.scenarioMode = "swarm";
+            sim.gameManager.agents = [];
+            sim.gameManager.keyAdversary = null;
+          }
         },
       },
       attack_cutin: {

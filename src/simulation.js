@@ -523,8 +523,11 @@ export class Simulation {
           p.walking = true;
         } else {
           p.isJaywalker = false;
-          p.speed = 0.8;
+          p.speed = 0;
           p.walking = false;
+          p.crossing = false;
+          const idx = this.pedestrians.indexOf(p);
+          if (idx !== -1) this.pedestrians.splice(idx, 1);
         }
         continue;
       }
@@ -1577,7 +1580,7 @@ export class Simulation {
       targetZ: targetP.z,
       speed: 4.8,
       walking: true,
-      crossing: true,
+      crossing: false,
       isJaywalker: true,
       width: 0.65,
       depth: 0.65,
