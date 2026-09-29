@@ -513,9 +513,13 @@ export class Simulation {
     for (const p of this.pedestrians) {
       if (p.isJaywalker) {
         const dx = p.targetX - p.x;
-        if (Math.abs(dx) > 0.4) {
-          p.x += Math.sign(dx) * p.speed * dt;
-          p.heading = Math.sign(dx) > 0 ? -Math.PI / 2 : Math.PI / 2;
+        const dz = p.targetZ - p.z;
+        const remaining = Math.hypot(dx, dz);
+        if (remaining > 0.4) {
+          const stepDist = Math.min(remaining, p.speed * dt);
+          p.x += (dx / remaining) * stepDist;
+          p.z += (dz / remaining) * stepDist;
+          p.heading = heading(p, { x: p.targetX, z: p.targetZ });
           p.walking = true;
         } else {
           p.isJaywalker = false;
@@ -638,24 +642,22 @@ export class Simulation {
         } else {
           this.aebTTC = 5.0;
         }
-        const isEmergency =
-          (this.brakeReason && (
-            this.brakeReason.toLowerCase().includes("pedestrian") ||
-            this.brakeReason.toLowerCase().includes("clearance") ||
-            this.brakeReason.toLowerCase().includes("conflict")
-          )) || this.aebTTC < 1.6;
+        const hasJaywalker = this.pedestrians.some((p) => p.isJaywalker && dist(p, v) < 22);
+        const isEmergency = hasJaywalker || (this.aebTTC < 1.1 && v.speed > 2.0);
 
         if (this.aebTimer > 0) {
           this.aebTimer -= dt;
         }
         if (isEmergency && v.speed > 0.6) {
-          this.aebTimer = Math.max(this.aebTimer, 2.5);
+          this.aebTimer = Math.max(this.aebTimer, 1.8);
           this.aebDecel = -8.5;
+        }
+        this.aebActive = this.aebTimer > 0;
+        if (this.aebActive) {
           target = 0;
           this.pedals.brake = 1.0;
           this.pedals.throttle = 0;
         }
-        this.aebActive = this.aebTimer > 0;
       }
     }
     if (this.blinker && this.blinker !== "none") {
@@ -1555,12 +1557,13 @@ export class Simulation {
   }
   triggerJaywalker() {
     const v = this.player;
-    const forwardDist = 16.5;
+    const forwardDist = Math.max(22.0, v.speed * 1.5);
     const ahead = move(v, v.heading, forwardDist);
     const fromLeft = Math.random() > 0.5;
     const sideOffset = fromLeft ? -9.5 : 9.5;
     const startP = move(ahead, v.heading + Math.PI / 2, sideOffset);
     const targetP = move(ahead, v.heading + Math.PI / 2, -sideOffset);
+    const h = heading(startP, targetP);
 
     const jaywalker = {
       id: `jaywalker-${Math.floor(this.time * 1000)}`,
@@ -1569,16 +1572,17 @@ export class Simulation {
       x: startP.x,
       z: startP.z,
       startX: startP.x,
+      startZ: startP.z,
       targetX: targetP.x,
-      targetZ: startP.z,
-      speed: 5.2,
+      targetZ: targetP.z,
+      speed: 4.8,
       walking: true,
       crossing: true,
       isJaywalker: true,
       width: 0.65,
       depth: 0.65,
       height: 1.7,
-      heading: fromLeft ? -Math.PI / 2 : Math.PI / 2,
+      heading: h,
     };
     this.pedestrians.push(jaywalker);
     this.aebTimer = 3.2;
@@ -1611,6 +1615,10 @@ export class Simulation {
   triggerZipperMerge() {
     if (!this.gameManager) return null;
     return this.gameManager.triggerZipperMerge();
+  }
+  triggerTruckScenario() {
+    if (!this.gameManager) return null;
+    return this.gameManager.triggerTruckScenario();
   }
   triggerConstruction() {
     if (!this.gameManager) return null;

@@ -15,6 +15,10 @@ export class TrajectoryRecorder {
     this.sessionId = `session_${Date.now()}`;
   }
 
+  get recording() {
+    return this.isRecording;
+  }
+
   toggle() {
     this.isRecording = !this.isRecording;
     if (this.isRecording) {

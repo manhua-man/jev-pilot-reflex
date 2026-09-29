@@ -108,45 +108,31 @@ export class GameTrafficManager {
   }
 
   triggerCutIn() {
-    // Find or create a cut-in agent on the front right/left
-    let candidate = this.agents.find(a => a.role === "cut_in" || a.state === "ready_cut_in");
-    const player = this.sim.player;
-
-    if (!candidate || dist(candidate, player) > 60) {
-      // Reposition or spawn a fresh aggressive vehicle on right-front
-      const h = player.heading;
-      const x = player.x + Math.sin(h) * 16 + Math.cos(h) * 3.6;
-      const z = player.z - Math.cos(h) * 16 + Math.sin(h) * 3.6;
-      if (!candidate) {
-        candidate = this.spawnAgent({
-          role: "cut_in",
-          relAhead: 16,
-          relRight: 3.6,
-          speed: Math.max(9, player.speed * 0.95),
-          aggressiveness: 0.90,
-          name: "NPC-加塞先锋",
-          color: "#f59e0b",
-        });
-      }
-      candidate.x = x;
-      candidate.z = z;
-      candidate.heading = h;
-      candidate.currentLaneRight = 3.6;
-      candidate.targetLaneRight = 3.6;
-      candidate.lateralOffset = 0;
-      candidate.speed = Math.max(9, player.speed * 0.95);
-    }
-
-    // Force trigger aggressive cut-in
     this.scenarioMode = "cut_in";
     this.zipperState = null;
+    this.truckState = null;
+    this.constructionState = null;
+    this.roundaboutState = null;
+    this.agents = [];
+    const player = this.sim.player;
+
+    const candidate = this.spawnAgent({
+      role: "cut_in",
+      relAhead: 16,
+      relRight: 3.6,
+      speed: Math.max(9, player.speed * 0.95),
+      aggressiveness: 0.92,
+      name: "NPC-加塞先锋",
+      color: "#f59e0b",
+    });
+
     candidate.role = "cut_in";
     candidate.state = "aggressive_cut_in";
     candidate.cutInStage = 1;
+    candidate.currentLaneRight = 3.6;
     candidate.targetLaneRight = 0.0; // aim directly for player's center lane
     candidate.blinker = "left";
     candidate.statusText = "⚠️ 强行加塞并线中";
-    candidate.aggressiveness = 0.92;
     this.keyAdversary = candidate;
 
     this.sim.event("⚡ 触发多车博弈场景：右侧 NPC 开启转向灯向自车强行加塞！", "warning");

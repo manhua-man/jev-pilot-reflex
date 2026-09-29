@@ -110,7 +110,9 @@ const vlaController = new VLAController(sim, {
   onAudioAlert: () => audio.playAebAlert(),
 });
 window.__recorder = recorder;
+window.recorder = recorder;
 window.__neuralPolicy = neuralPolicy;
+window.neuralPolicy = neuralPolicy;
 window.__vlaController = vlaController;
 window.vlaController = vlaController;
 window.sim = sim;

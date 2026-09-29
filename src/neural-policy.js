@@ -12,6 +12,10 @@ export class NeuralPolicy {
     this.initDefaultWeights();
   }
 
+  get active() {
+    return this.enabled;
+  }
+
   initDefaultWeights() {
     // Calibrated behavior cloning default weights
     // Layer 1: 11 -> 24
