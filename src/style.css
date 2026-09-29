@@ -2280,6 +2280,12 @@ body.crashed .world-picker {
   border-color: #c084fc !important;
   box-shadow: 0 0 10px rgba(168, 85, 247, 0.5) !important;
 }
+.scenario-cutin-btn.vla-dock-btn.active {
+  background: rgba(168, 85, 247, 0.45) !important;
+  border-color: #a855f7 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.6) !important;
+}
 
 /* Jev Safety Shield Modal Banner */
 .jev-shield-modal {

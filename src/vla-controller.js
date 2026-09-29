@@ -97,7 +97,17 @@ export class VLAController {
         execute: (sim) => {
           const adv = sim.triggerCutIn();
           if (adv) {
+            const p = sim.player;
+            const h = p.heading;
+            // Cleanly place directly in front of ego car
+            adv.x = p.x + Math.sin(h) * 18 + Math.cos(h) * 1.5;
+            adv.z = p.z - Math.cos(h) * 18 + Math.sin(h) * 1.5;
+            adv.heading = h;
             adv.speed = 6.0;
+            adv.targetSpeed = 6.0;
+            adv.state = "aggressive_cut_in";
+            adv.cutInStage = 1;
+            adv.targetLaneRight = 0.0;
           }
         },
       },
@@ -136,12 +146,17 @@ export class VLAController {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    // Check if it's an adversarial/attack text
-    const isDangerous =
-      /撞|冲|死|加塞|撞车|同归|加速冲|crash|hit|attack|kill/i.test(trimmed);
+    // Safety negative check (e.g. "不要撞车", "别撞", "避免碰撞", "小心追尾")
+    const isNegativeSafety = /不要|别|避免|防止|禁止|小心|减速|切勿|安全/i.test(trimmed);
+
+    // Explicit attack intent check
+    const isExplicitAttack =
+      !isNegativeSafety &&
+      (/(撞|冲|追尾|死|杀|同归|全速冲|油门到底.*撞|冲向)/i.test(trimmed) ||
+       /(crash|ram|hit|attack|destroy|kill)/i.test(trimmed));
 
     let matchedCmd;
-    if (isDangerous) {
+    if (isExplicitAttack) {
       matchedCmd = {
         id: 5,
         key: "custom_attack",
@@ -151,17 +166,33 @@ export class VLAController {
         intent: "恶意指令攻击态 (Prompt Attack)",
         isMalicious: true,
         execute: (sim) => {
-          sim.triggerCutIn();
+          const adv = sim.triggerCutIn();
+          if (adv) {
+            const p = sim.player;
+            const h = p.heading;
+            adv.x = p.x + Math.sin(h) * 18 + Math.cos(h) * 1.5;
+            adv.z = p.z - Math.cos(h) * 18 + Math.sin(h) * 1.5;
+            adv.heading = h;
+            adv.speed = 6.0;
+            adv.targetSpeed = 6.0;
+            adv.state = "aggressive_cut_in";
+            adv.cutInStage = 1;
+            adv.targetLaneRight = 0.0;
+          }
         },
       };
-    } else if (/左|机场/i.test(trimmed)) {
-      matchedCmd = { ...this.presets.left_fork, prompt: trimmed };
-    } else if (/右|金融|cbd/i.test(trimmed)) {
-      matchedCmd = { ...this.presets.right_fork, prompt: trimmed };
-    } else if (/超车|变道|加速/i.test(trimmed)) {
+    } else if (/超车|变道|加速超|借道超/i.test(trimmed)) {
       matchedCmd = { ...this.presets.overtake, prompt: trimmed };
-    } else if (/慢|停|让|礼让/i.test(trimmed)) {
+    } else if (isNegativeSafety || /礼让|让行|减速|跟车|防撞|慢一点|停/i.test(trimmed)) {
       matchedCmd = { ...this.presets.defensive_yield, prompt: trimmed };
+    } else if (/机场|左岔|左匝|往左走|左边路牌/i.test(trimmed)) {
+      matchedCmd = { ...this.presets.left_fork, prompt: trimmed };
+    } else if (/金融|cbd|右岔|右匝|往右走|右边路牌/i.test(trimmed)) {
+      matchedCmd = { ...this.presets.right_fork, prompt: trimmed };
+    } else if (/巡航|居中|直行|平稳|正常|经济/i.test(trimmed)) {
+      matchedCmd = { ...this.presets.eco_cruise, prompt: trimmed };
+    } else if (/施工|雪糕筒|锥桶|作业区/i.test(trimmed)) {
+      matchedCmd = { ...this.presets.attack_cones, prompt: trimmed, isMalicious: false };
     } else {
       matchedCmd = {
         id: 0,
@@ -182,6 +213,46 @@ export class VLAController {
     this.activeCommand = cmd;
     this.shieldIntercepted = false;
 
+    // 1. Auto-engage autopilot so the VLA instruction actually drives
+    if (!this.sim.autopilot) {
+      if (typeof window.setPilot === "function") {
+        window.setPilot(true);
+      } else {
+        this.sim.autopilot = true;
+      }
+    }
+
+    // 2. Dismiss any existing shield modal
+    const modal = document.getElementById("jev-shield-modal");
+    if (modal) {
+      modal.classList.remove("active");
+      modal.hidden = true;
+    }
+
+    // 3. Reset vehicle emergency brake states if non-malicious
+    if (!cmd.isMalicious) {
+      this.maliciousActive = false;
+      this.sim.aebActive = false;
+      this.sim.aebTimer = 0;
+      this.sim.pedals.brake = 0;
+      this.sim.pedals.throttle = 0.6;
+      this.sim.player.target = 18.0; // Resume nominal cruise (~65 km/h)
+
+      // Restore S1 monitor display
+      const s1Badge = document.querySelector(".s1-badge");
+      const s1Status = document.getElementById("s1-status");
+      if (s1Badge) {
+        s1Badge.textContent = "🧠 System 1: Jev Reflex 快思考";
+      }
+      if (s1Status) {
+        s1Status.innerHTML = '<span class="status-pill safe">● 安全闸状态: 闭环护航 (100% 物理兜底)</span>';
+      }
+
+      // Hide AEB alert banner if still visible
+      const aebAlert = document.getElementById("aeb-alert");
+      if (aebAlert) aebAlert.hidden = true;
+    }
+
     // Execute environment setup
     cmd.execute(this.sim);
 
@@ -192,7 +263,6 @@ export class VLAController {
         "error"
       );
     } else {
-      this.maliciousActive = false;
       this.onToast(
         `🗣️ [VLA 意图解析成功] 指令已注入："${cmd.prompt}"`,
         "success"
@@ -238,8 +308,11 @@ export class VLAController {
 
     const adv = sim.gameManager?.keyAdversary;
     if (adv) {
+      // Calculate local lateral coordinate relative to vehicle heading
       const dx = adv.x - v.x;
-      v.steering = Math.max(-0.5, Math.min(0.5, dx * 0.35));
+      const dz = adv.z - v.z;
+      const localLateral = Math.cos(v.heading) * dx + Math.sin(v.heading) * dz;
+      v.steering = Math.max(-0.6, Math.min(0.6, localLateral * 0.4));
     }
 
     // Jev 1.5ms Physical Reflex Shield Check:

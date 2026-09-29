@@ -112,6 +112,8 @@ const vlaController = new VLAController(sim, {
 window.__recorder = recorder;
 window.__neuralPolicy = neuralPolicy;
 window.__vlaController = vlaController;
+window.vlaController = vlaController;
+window.sim = sim;
 let playCredits = null,
   loading = true,
   lastMapDraw = 0;
@@ -518,9 +520,15 @@ $("vla-form")?.addEventListener("submit", (e) => {
 });
 function toggleVLA() {
   const p = $("dual-brain-panel");
-  if (p && p.hidden) {
-    p.hidden = false;
-    $("dual-brain-toggle")?.classList.add("active");
+  const dockBtn = $("vla-toggle");
+  if (p) {
+    if (p.hidden) {
+      p.hidden = false;
+      $("dual-brain-toggle")?.classList.add("active");
+      dockBtn?.classList.add("active");
+    } else {
+      dockBtn?.classList.toggle("active");
+    }
   }
   const input = $("vla-custom-input");
   if (input) {
@@ -529,6 +537,10 @@ function toggleVLA() {
   }
 }
 $("vla-toggle")?.addEventListener("click", toggleVLA);
+
+window.sim = sim;
+window.vlaController = vlaController;
+window.setPilot = setPilot;
 
 $("endless-toggle")?.addEventListener("click", () => {
   const active = sim.toggleEndlessCruising();
@@ -539,6 +551,7 @@ $("dual-brain-toggle")?.addEventListener("click", () => {
   if (p) {
     p.hidden = !p.hidden;
     $("dual-brain-toggle").classList.toggle("active", !p.hidden);
+    $("vla-toggle")?.classList.toggle("active", !p.hidden);
   }
 });
 $("close-dual-brain")?.addEventListener("click", () => {
@@ -546,6 +559,7 @@ $("close-dual-brain")?.addEventListener("click", () => {
   if (p) {
     p.hidden = true;
     $("dual-brain-toggle")?.classList.remove("active");
+    $("vla-toggle")?.classList.remove("active");
   }
 });
 function setWeatherMode(mode) {
@@ -1546,6 +1560,7 @@ function updateUI() {
     aebAlert.hidden = !sim.aebActive;
     if (sim.aebActive) {
       const ttcEl = $("aeb-ttc-label");
+      const decelEl = $("aeb-decel-label");
       const dispTtc = sim.aebTTC < 4.0 ? sim.aebTTC : 0.8;
       if (ttcEl) ttcEl.textContent = `TTC: ${dispTtc.toFixed(1)}s`;
       if (decelEl) decelEl.textContent = `减速度: ${(sim.aebDecel || -8.5).toFixed(1)} m/s²`;
