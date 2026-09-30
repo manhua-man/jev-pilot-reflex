@@ -1,4 +1,5 @@
 import * as THREE from "three";
+if (typeof window !== "undefined") window.THREE = THREE;
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { signalState } from "./world.js";
 import { RoadVectors } from "./road-vectors.js";
@@ -1119,6 +1120,9 @@ export class DriveScene {
     this.destination.add(ring);
     const pole = cyl(this.destination, 0.055, 5, 0, 2.5, 0, "#e4f6b3");
     const flag = box(this.destination, 1.8, 1.1, 0.06, 0.85, 4.5, 0, "#dff293");
+    if (this.sim.world.type === "alpine") {
+      this.destination.scale.set(0.24, 0.24, 0.24);
+    }
     this.scene.add(this.destination);
     this.player = carModel("#e2e5e9");
     this.heroCar = null;
@@ -1384,8 +1388,7 @@ export class DriveScene {
   }
   buildAlpine(group, world) {
     this.alpinePassage = new AlpinePassage(group, this.glowMaterials, false);
-    const scale = 10;
-    this.alpinePassage.group.scale.set(scale, scale, scale);
+    this.alpinePassage.group.scale.set(1, 1, 1);
     this.alpinePassage.group.position.set(0, 0, 0);
   }
   render(dt, draw = true) {
@@ -1408,23 +1411,24 @@ export class DriveScene {
     this.player.position.set(v.x, 0, v.z);
     this.player.rotation.y = -v.heading;
     if (this.sim.world.type === "alpine") {
-      const scale = 10;
-      const xDio = v.x / scale;
-      const zDio = v.z / scale;
-      const along = xDio * 0.707106 + zDio * 0.707106;
+      this.player.scale.set(0.24, 0.24, 0.24);
+      const along = v.x * 0.707106 + v.z * 0.707106;
       const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
       const smooth = (x, min, max) => {
         const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
         return t * t * (3 - 2 * t);
       };
       const roadH = 0.03 + (1 - smooth(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
-      this.player.position.y = roadH * scale;
+      this.player.position.y = roadH;
 
-      const forwardAlong = along + 0.24 / scale;
-      const rearAlong = along - 0.24 / scale;
-      const hFront = (0.03 + (1 - smooth(Math.abs(forwardAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
-      const hRear = (0.03 + (1 - smooth(Math.abs(rearAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
+      const forwardAlong = along + 0.24;
+      const rearAlong = along - 0.24;
+      const hFront = 0.03 + (1 - smooth(Math.abs(forwardAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
+      const hRear = 0.03 + (1 - smooth(Math.abs(rearAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
       this.player.rotation.x = Math.atan2(hFront - hRear, 0.48);
+    } else {
+      this.player.scale.set(1, 1, 1);
+      this.player.rotation.x = 0;
     }
     this.wheelDirection = Math.sign(v.speed) || this.wheelDirection;
     if (this.heroCar && !this.sim.paused && !this.sim.crash)
@@ -1446,14 +1450,16 @@ export class DriveScene {
       if (m) {
         let py = 0;
         if (this.sim.world.type === "alpine") {
-          const scale = 10;
-          const pAlong = (p.x * 0.707106 + p.z * 0.707106) / scale;
+          m.scale.set(0.24, 0.24, 0.24);
+          const pAlong = p.x * 0.707106 + p.z * 0.707106;
           const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
           const smooth = (x, min, max) => {
             const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
             return t * t * (3 - 2 * t);
           };
-          py = (0.03 + (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
+          py = 0.03 + (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
+        } else {
+          m.scale.set(1, 1, 1);
         }
         m.position.set(p.x, py, p.z);
         m.rotation.y = -p.heading;
@@ -1770,12 +1776,14 @@ export class DriveScene {
       );
       look = new THREE.Vector3(v.x, 0.7, v.z);
     } else if (this.mode === "hood") {
+      const isAlpine = this.sim.world.type === "alpine";
+      const carScale = isAlpine ? 0.24 : 1.0;
       const view = this.cameraInput.current();
-      const forward = this.player.userData.eyeForward ?? 0.15;
+      const forward = (this.player.userData.eyeForward ?? 0.15) * carScale;
       pos = new THREE.Vector3(
-        v.x + Math.sin(v.heading) * forward - Math.cos(v.heading) * 0.3,
-        this.player.userData.eyeHeight || 1.27,
-        v.z - Math.cos(v.heading) * forward - Math.sin(v.heading) * 0.3,
+        v.x + Math.sin(v.heading) * forward - Math.cos(v.heading) * (0.3 * carScale),
+        (this.player.position.y || 0) + (this.player.userData.eyeHeight || 1.27) * carScale,
+        v.z - Math.cos(v.heading) * forward - Math.sin(v.heading) * (0.3 * carScale),
       );
       const yaw = v.heading + view.yaw;
       look = pos
@@ -1785,8 +1793,29 @@ export class DriveScene {
             Math.sin(yaw) * Math.cos(view.pitch),
             Math.sin(view.pitch),
             -Math.cos(yaw) * Math.cos(view.pitch),
-          ).multiplyScalar(25),
+          ).multiplyScalar(25 * carScale),
         );
+    } else if (this.mode === "map" && this.sim.world.type === "alpine") {
+      pos = new THREE.Vector3(12.8, 10.5, 14.2);
+      look = new THREE.Vector3(0, 0.8, 0);
+    } else if (this.sim.world.type === "alpine") {
+      const view = this.cameraInput.current(),
+        yaw = v.heading + view.yaw;
+      // High-angle diorama chase view: elevated above the hero car to take in the full diorama
+      const dist = Math.max(3.2, Math.min(7.5, view.distance * 0.4));
+      const height = Math.max(1.8, Math.min(4.8, dist * 0.65));
+      const py = this.player.position.y || 0.05;
+      pos = new THREE.Vector3(
+        v.x - Math.sin(yaw) * dist,
+        py + height,
+        v.z + Math.cos(yaw) * dist,
+      );
+      const ahead = 1.0;
+      look = new THREE.Vector3(
+        v.x + Math.sin(v.heading) * ahead,
+        py + 0.35,
+        v.z - Math.cos(v.heading) * ahead,
+      );
     } else {
       const view = this.cameraInput.current(),
         yaw = v.heading + view.yaw;

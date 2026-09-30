@@ -120,15 +120,15 @@ export class Simulation {
       s: 0,
       stops: {},
       intersectionMemory: null,
-      width: 1.9,
-      depth: 4.75,
+      width: type === "alpine" ? 0.44 : 1.9,
+      depth: type === "alpine" ? 1.0 : 4.75,
     };
     this.traffic = [];
     for (let i = 0; i < this.world.theme.traffic; i++) this.spawnTraffic(i);
     this.pedestrians = [];
     for (
       let i = 0;
-      i < (type === "highway" ? 0 : 14 + (type === "city" ? 12 : 0));
+      i < (type === "highway" || type === "alpine" ? 0 : 14 + (type === "city" ? 12 : 0));
       i++
     ) {
       const node = choose(this.r, this.world.nodes),
@@ -171,17 +171,25 @@ export class Simulation {
   }
   spawnTraffic(i, distant = false) {
     const highway = this.world.type === "highway";
+    const alpine = this.world.type === "alpine";
     const nodes = highway
       ? this.world.nodes.filter((node) => /^h\d+$/.test(node.id))
       : this.world.nodes;
-    let a = choose(this.r, nodes),
-      b = choose(
-        this.r,
-        nodes.filter((n) => dist(n, a) > 100),
-      ),
-      ids = highway
-        ? (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id)
-        : shortestPath(this.world, a.id, b.id);
+    let ids;
+    if (highway) {
+      ids = (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id);
+    } else if (alpine) {
+      const mainNodes = ["alp-0", "alp-1", "alp-2", "alp-3", "alp-4", "alp-5", "alp-6"];
+      ids = i % 2 === 0 ? mainNodes : [...mainNodes].reverse();
+    } else {
+      let a = choose(this.r, nodes),
+        b = choose(
+          this.r,
+          nodes.filter((n) => dist(n, a) > 100),
+        );
+      if (!b) b = choose(this.r, nodes.filter((n) => n !== a)) || a;
+      ids = shortestPath(this.world, a.id, b.id);
+    }
     if (ids.length < 3) return this.spawnTraffic(i, distant);
     const route = makeRoute(
         this.world,
@@ -191,13 +199,13 @@ export class Simulation {
       s = this.r() * route.length,
       p = pointAt(route.points, s),
       next = pointAt(route.points, s + 1);
-    if (dist(p, this.player) < (distant ? 600 : 15))
+    if (dist(p, this.player) < (distant ? (alpine ? 10 : 600) : (alpine ? 2 : 15)))
       return this.spawnTraffic(i, distant);
     const existing = this.traffic.find((v) => v.id === `vehicle-${i}`);
-    if (this.traffic.some((v) => v !== existing && dist(v, p) < 10)) return;
+    if (this.traffic.some((v) => v !== existing && dist(v, p) < (alpine ? 1.8 : 10))) return;
     const v = {
       id: `vehicle-${i}`,
-      type: i % 5 === 0 ? "motorcycle" : "car",
+      type: alpine ? "car" : (i % 5 === 0 ? "motorcycle" : "car"),
       x: p.x,
       z: p.z,
       heading: heading(p, next),
@@ -205,8 +213,8 @@ export class Simulation {
       s,
       route,
       stops: {},
-      width: i % 5 === 0 ? 0.8 : 1.9,
-      depth: i % 5 === 0 ? 2.3 : 4.2,
+      width: alpine ? 0.44 : (i % 5 === 0 ? 0.8 : 1.9),
+      depth: alpine ? 1.0 : (i % 5 === 0 ? 2.3 : 4.2),
       color: choose(this.r, [
         "#de8e69",
         "#e9be57",
@@ -220,7 +228,7 @@ export class Simulation {
     else this.traffic.push(v);
   }
   continueTraffic(v) {
-    if (this.world.type === "highway") return;
+    if (this.world.type === "highway" || this.world.type === "alpine") return;
     // Rebuild from the current final road segment, before its junction enters
     // braking range. The shared segment preserves lane position and heading.
     const ids = v.route.ids.slice(-2);

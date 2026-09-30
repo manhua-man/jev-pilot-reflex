@@ -216,7 +216,8 @@ function createSafeCanvas(w = 256, h = 256) {
 
         const snowDustCode = (amount = '1.0') => /* glsl */`
             {
-                float sdN = sn_noise(vWPos.xz * 3.1) * 0.6 + sn_noise(vWPos.xz * 9.0) * 0.4;
+                vec2 snWpXz = vWPos.xz;
+                float sdN = sn_noise(snWpXz * 3.1) * 0.6 + sn_noise(snWpXz * 9.0) * 0.4;
                 float sd = uSnowCoverage * (${amount}) * smoothstep(0.38, 0.78, vWNrm.y + (sdN - 0.5) * 0.5);
                 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.97), sd);
             }
@@ -295,7 +296,7 @@ function createSafeCanvas(w = 256, h = 256) {
                     transformed.xz *= mix(0.92, 1.0, slabS);
                 `,
                 fragmentColor: /* glsl */`
-                    diffuseColor.rgb *= 0.93 + 0.07 * sn_noise(vWPos.xz * 18.0);
+                    diffuseColor.rgb *= 0.93 + 0.07 * sn_noise(vWPos.xz * 1.8);
                 `
             }
         );
@@ -956,7 +957,8 @@ function createSafeCanvas(w = 256, h = 256) {
                 scene.add(bridge);
             }
             update(T) {
-                for (const l of this.lights) l.intensity = T.bridge;
+                const val = (T && typeof T.bridge === 'number' && !isNaN(T.bridge)) ? T.bridge : 0;
+                for (const l of this.lights) l.intensity = val;
             }
         }
 
@@ -1560,7 +1562,8 @@ function createSafeCanvas(w = 256, h = 256) {
                 this.chimneyTop = new THREE.Vector3(0.42, 2.62, -0.4).applyMatrix4(hut.matrixWorld);
             }
             update(T) {
-                this.lantern.intensity = T.lantern;
+                const val = (T && typeof T.lantern === 'number' && !isNaN(T.lantern)) ? T.lantern : 0;
+                this.lantern.intensity = val;
                 this.lanternGlass.material.color.setRGB(0.6 + T.lantern * 0.5, 0.45 + T.lantern * 0.36, 0.2 + T.lantern * 0.15);
             }
         }
@@ -2349,6 +2352,7 @@ export class AlpinePassage {
 
     update(dt, controller) {
         if (!controller) return;
+        this.time = (this.time || 0) + dt;
         const S = controller.season, T = controller.time;
         for (const u of this.updatables) {
             try {
@@ -2356,9 +2360,9 @@ export class AlpinePassage {
                 else if (u === this.bridge) u.update(T);
                 else if (u === this.chalet) u.update(T);
                 else if (u === this.windmill) u.update(dt, U.uWindTime.value);
-                else if (u === this.campfire) u.update(dt, S.fireflies || 0.5, T.evening || 0);
-                else if (u === this.chimneySmoke) u.update(dt);
-                else if (u === this.birds) u.update(dt);
+                else if (u === this.campfire) u.update(this.time || 0, (S.fire || 0) * (T.evening || 0));
+                else if (u === this.chimneySmoke) u.update(dt, S.smoke || 0, T.night || 0);
+                else if (u === this.birds) u.update(dt, this.time || 0, S.birds || 0);
                 else if (u === this.traffic) u.update(dt, T.carLights || 0);
             } catch (e) {
                 // Ignore individual prop tick error

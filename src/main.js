@@ -96,11 +96,11 @@ const icon = (name) => `<i data-lucide="${name}"></i>`,
   $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search),
   aliases = { suburb: "town", country: "highway" },
-  requested = params.get("world") || "city",
+  requested = params.get("world") || "alpine",
   type = aliases[requested] || requested;
 const sim = new Simulation(
   Number(params.get("seed")) || Math.floor(Math.random() * 999999),
-  THEMES[type] ? type : "city",
+  THEMES[type] ? type : "alpine",
 );
 window.__sim = sim;
 const audio = new DriveAudio();

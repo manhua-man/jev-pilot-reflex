@@ -30,10 +30,10 @@ export const THEMES = {
     name: "Alpine Passage",
     subtitle: "Four seasons on one mountain pass. Every mile leads home.",
     size: 7,
-    traffic: 6,
+    traffic: 4,
     buildings: 0,
-    limit: 18,
-    laneOffset: 2.2,
+    limit: 5,
+    laneOffset: 0.28,
   },
 };
 export function generateWorld(seed, type = "town") {
@@ -405,33 +405,41 @@ export function makeRoute(world, ids, laneOffset) {
   const raw = [],
     crossings = [];
   const nodes = ids.map((id) => world.byId[id]);
-  const lOffset = laneOffset ?? world.theme?.laneOffset ?? 4.8;
+  const isAlpine = world.type === "alpine";
+  const lOffset = laneOffset ?? world.theme?.laneOffset ?? (isAlpine ? 0.28 : 4.8);
   const offset = (p, h) => move(p, h + Math.PI / 2, lOffset);
   for (let i = 0; i < nodes.length; i++) {
     const p = nodes[i],
       hin = heading(nodes[Math.max(0, i - 1)], nodes[i === 0 ? 1 : i]),
       hout = i < nodes.length - 1 ? heading(p, nodes[i + 1]) : hin;
+    const dPrev = dist(nodes[Math.max(0, i - 1)], p);
+    const dNext = i < nodes.length - 1 ? dist(p, nodes[i + 1]) : dPrev;
+    const startLead = Math.min(isAlpine ? 0.2 : 14, dNext * 0.35);
+    const endLead = Math.min(isAlpine ? 0.2 : 15, dPrev * 0.35);
     if (i === 0) {
-      raw.push(move(offset(p, hout), hout, 14));
+      raw.push(move(offset(p, hout), hout, startLead));
       continue;
     }
     if (i === nodes.length - 1) {
-      raw.push(move(offset(p, hin), hin, -15));
+      raw.push(move(offset(p, hin), hin, -endLead));
       continue;
     }
-    const a = move(offset(p, hin), hin, -11),
-      b = move(offset(p, hout), hout, 11);
+    const leadIn = Math.min(isAlpine ? 0.25 : 11, dPrev * 0.35),
+      leadOut = Math.min(isAlpine ? 0.25 : 11, dNext * 0.35);
+    const a = move(offset(p, hin), hin, -leadIn),
+      b = move(offset(p, hout), hout, leadOut);
     raw.push(a);
     if (Math.cos(hout - hin) < -0.99) {
       // Dead-end traffic makes a continuous turn into the opposite lane.
-      const center = move(p, hin, -11);
+      const center = move(p, hin, -leadIn);
+      const rTurn = isAlpine ? lOffset : 4.8;
       for (let k = 1; k <= 24; k++) {
         const theta = (k / 24) * Math.PI;
         raw.push(
           move(
-            move(center, hin, Math.sin(theta) * 4.8),
+            move(center, hin, Math.sin(theta) * rTurn),
             hin + Math.PI / 2,
-            Math.cos(theta) * 4.8,
+            Math.cos(theta) * rTurn,
           ),
         );
       }
@@ -507,23 +515,23 @@ export function signalState(node, time, approach) {
 
 export function generateAlpine(seed, theme) {
   const nodes = [
-    { id: "alp-0", x: -75, z: -75, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-1", x: -48, z: -48, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-2", x: -24, z: -24, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-3", x: -7.2, z: -7.2, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-4", x: 14, z: 14, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-5", x: 42, z: 42, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-6", x: 75, z: 75, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-0", x: -6.0, z: -6.0, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-1", x: -4.0, z: -4.0, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-2", x: -2.2, z: -2.2, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-3", x: -0.72, z: -0.72, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-4", x: 1.2, z: 1.2, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-5", x: 3.6, z: 3.6, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-6", x: 6.0, z: 6.0, control: "none", offset: 0, neighbors: [] },
     // Scenic Chalet & Campfire Spur loop:
-    { id: "alp-spur-chalet", x: 36, z: 12, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-spur-campfire", x: 50, z: -14, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-spur-windmill", x: 22, z: -28, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-spur-chalet", x: 4.2, z: 1.0, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-spur-campfire", x: 4.8, z: -1.8, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-spur-windmill", x: 2.2, z: -3.2, control: "none", offset: 0, neighbors: [] },
   ];
 
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const edges = [];
 
-  const link = (aId, bId, name = "Alpine Pass Road", width = 14) => {
+  const link = (aId, bId, name = "Alpine Pass Road", width = 1.4) => {
     const a = byId[aId], b = byId[bId];
     if (!a.neighbors.includes(bId)) a.neighbors.push(bId);
     if (!b.neighbors.includes(aId)) b.neighbors.push(aId);
@@ -538,64 +546,22 @@ export function generateAlpine(seed, theme) {
     });
   };
 
-  // Main Mountain Pass Ridge
-  link("alp-0", "alp-1", "Alpine Pass · Valley Approach");
-  link("alp-1", "alp-2", "Alpine Pass · Pine Forest");
-  link("alp-2", "alp-3", "Alpine Pass · Stream Viaduct");
-  link("alp-3", "alp-4", "Alpine Pass · Stone Arch Bridge");
-  link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau");
-  link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit");
+  // Main Mountain Pass Ridge (crossing stone arch bridge over mountain stream)
+  link("alp-0", "alp-1", "Alpine Pass · Valley Approach", 1.4);
+  link("alp-1", "alp-2", "Alpine Pass · Pine Forest", 1.4);
+  link("alp-2", "alp-3", "Alpine Pass · Stream Viaduct", 1.4);
+  link("alp-3", "alp-4", "Alpine Pass · Stone Arch Bridge", 1.4);
+  link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau", 1.4);
+  link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit", 1.4);
 
   // Scenic Chalet Terrace Loop
-  link("alp-4", "alp-spur-windmill", "Windmill Vista Lane", 10);
-  link("alp-spur-windmill", "alp-spur-campfire", "Lookout Ridge Trail", 10);
-  link("alp-spur-campfire", "alp-spur-chalet", "Chalet Bellevue Way", 10);
-  link("alp-spur-chalet", "alp-5", "Plateau Connector", 10);
-  link("alp-spur-chalet", "alp-4", "Bellevue Terrace", 10);
+  link("alp-4", "alp-spur-windmill", "Windmill Vista Lane", 1.0);
+  link("alp-spur-windmill", "alp-spur-campfire", "Lookout Ridge Trail", 1.0);
+  link("alp-spur-campfire", "alp-spur-chalet", "Chalet Bellevue Way", 1.0);
+  link("alp-spur-chalet", "alp-5", "Plateau Connector", 1.0);
+  link("alp-spur-chalet", "alp-4", "Bellevue Terrace", 1.0);
 
-  const objects = [
-    {
-      id: "alp-sign-valley",
-      type: "town_sign",
-      x: -68,
-      z: -78,
-      text: "VALLEY ENTRANCE",
-      height: 2.8,
-    },
-    {
-      id: "alp-sign-bridge",
-      type: "town_sign",
-      x: -16,
-      z: -12,
-      text: "ALPEN BRÜCKE",
-      height: 2.8,
-    },
-    {
-      id: "alp-sign-chalet",
-      type: "town_sign",
-      x: 38,
-      z: 16,
-      text: "CHALET BELLEVUE",
-      height: 2.8,
-    },
-    {
-      id: "alp-sign-campfire",
-      type: "town_sign",
-      x: 55,
-      z: -10,
-      text: "ALPINE LOOKOUT",
-      height: 2.8,
-    },
-    {
-      id: "alp-sign-summit",
-      type: "town_sign",
-      x: 78,
-      z: 70,
-      text: "PASS 480m · A-07",
-      height: 2.8,
-    },
-  ];
-
+  const objects = [];
   const world = {
     seed,
     type: "alpine",
@@ -604,9 +570,9 @@ export function generateAlpine(seed, theme) {
     byId,
     edges,
     objects,
-    xs: [-80, 80],
-    zs: [-80, 80],
-    bounds: { minX: -90, maxX: 90, minZ: -90, maxZ: 90 },
+    xs: [-7.5, 7.5],
+    zs: [-7.5, 7.5],
+    bounds: { minX: -8.0, maxX: 8.0, minZ: -8.0, maxZ: 8.0 },
     startNode: "alp-0",
     nextNode: "alp-1",
     destination: "alp-6",
