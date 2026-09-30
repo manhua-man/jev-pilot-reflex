@@ -26,9 +26,19 @@ export const THEMES = {
     limit: 28,
     laneOffset: 9,
   },
+  alpine: {
+    name: "Alpine Passage",
+    subtitle: "Four seasons on one mountain pass. Every mile leads home.",
+    size: 7,
+    traffic: 6,
+    buildings: 0,
+    limit: 18,
+    laneOffset: 2.2,
+  },
 };
 export function generateWorld(seed, type = "town") {
   if (type === "highway") return generateHighway(seed, THEMES.highway);
+  if (type === "alpine") return generateAlpine(seed, THEMES.alpine);
   const r = rng(seed),
     theme = THEMES[type],
     n = theme.size,
@@ -395,7 +405,8 @@ export function makeRoute(world, ids, laneOffset) {
   const raw = [],
     crossings = [];
   const nodes = ids.map((id) => world.byId[id]);
-  const offset = (p, h) => move(p, h + Math.PI / 2, 4.8);
+  const lOffset = laneOffset ?? world.theme?.laneOffset ?? 4.8;
+  const offset = (p, h) => move(p, h + Math.PI / 2, lOffset);
   for (let i = 0; i < nodes.length; i++) {
     const p = nodes[i],
       hin = heading(nodes[Math.max(0, i - 1)], nodes[i === 0 ? 1 : i]),
@@ -492,4 +503,124 @@ export function signalState(node, time, approach) {
     walk: false,
     remaining: phase < 10 ? 10 - phase : phase < 18 ? 18 - phase : 20 - phase,
   };
+}
+
+export function generateAlpine(seed, theme) {
+  const nodes = [
+    { id: "alp-0", x: -75, z: -75, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-1", x: -48, z: -48, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-2", x: -24, z: -24, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-3", x: -7.2, z: -7.2, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-4", x: 14, z: 14, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-5", x: 42, z: 42, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-6", x: 75, z: 75, control: "none", offset: 0, neighbors: [] },
+    // Scenic Chalet & Campfire Spur loop:
+    { id: "alp-spur-chalet", x: 36, z: 12, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-spur-campfire", x: 50, z: -14, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-spur-windmill", x: 22, z: -28, control: "none", offset: 0, neighbors: [] },
+  ];
+
+  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+  const edges = [];
+
+  const link = (aId, bId, name = "Alpine Pass Road", width = 14) => {
+    const a = byId[aId], b = byId[bId];
+    if (!a.neighbors.includes(bId)) a.neighbors.push(bId);
+    if (!b.neighbors.includes(aId)) b.neighbors.push(aId);
+    edges.push({
+      id: `road-${edges.length}`,
+      a: aId,
+      b: bId,
+      length: dist(a, b),
+      width,
+      speedLimit: theme.limit,
+      name,
+    });
+  };
+
+  // Main Mountain Pass Ridge
+  link("alp-0", "alp-1", "Alpine Pass · Valley Approach");
+  link("alp-1", "alp-2", "Alpine Pass · Pine Forest");
+  link("alp-2", "alp-3", "Alpine Pass · Stream Viaduct");
+  link("alp-3", "alp-4", "Alpine Pass · Stone Arch Bridge");
+  link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau");
+  link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit");
+
+  // Scenic Chalet Terrace Loop
+  link("alp-4", "alp-spur-windmill", "Windmill Vista Lane", 10);
+  link("alp-spur-windmill", "alp-spur-campfire", "Lookout Ridge Trail", 10);
+  link("alp-spur-campfire", "alp-spur-chalet", "Chalet Bellevue Way", 10);
+  link("alp-spur-chalet", "alp-5", "Plateau Connector", 10);
+  link("alp-spur-chalet", "alp-4", "Bellevue Terrace", 10);
+
+  const objects = [
+    {
+      id: "alp-sign-valley",
+      type: "town_sign",
+      x: -68,
+      z: -78,
+      text: "VALLEY ENTRANCE",
+      height: 2.8,
+    },
+    {
+      id: "alp-sign-bridge",
+      type: "town_sign",
+      x: -16,
+      z: -12,
+      text: "ALPEN BRÜCKE",
+      height: 2.8,
+    },
+    {
+      id: "alp-sign-chalet",
+      type: "town_sign",
+      x: 38,
+      z: 16,
+      text: "CHALET BELLEVUE",
+      height: 2.8,
+    },
+    {
+      id: "alp-sign-campfire",
+      type: "town_sign",
+      x: 55,
+      z: -10,
+      text: "ALPINE LOOKOUT",
+      height: 2.8,
+    },
+    {
+      id: "alp-sign-summit",
+      type: "town_sign",
+      x: 78,
+      z: 70,
+      text: "PASS 480m · A-07",
+      height: 2.8,
+    },
+  ];
+
+  const world = {
+    seed,
+    type: "alpine",
+    theme,
+    nodes,
+    byId,
+    edges,
+    objects,
+    xs: [-80, 80],
+    zs: [-80, 80],
+    bounds: { minX: -90, maxX: 90, minZ: -90, maxZ: 90 },
+    startNode: "alp-0",
+    nextNode: "alp-1",
+    destination: "alp-6",
+  };
+
+  world.route = makeRoute(world, [
+    "alp-0",
+    "alp-1",
+    "alp-2",
+    "alp-3",
+    "alp-4",
+    "alp-5",
+    "alp-6",
+  ]);
+
+  return world;
 }

@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
     ],
     build: {
       rolldownOptions: {
-        input: { main: "index.html", login: "login.html" },
+        input: { main: "index.html", login: "login.html", "four-seasons": "four-seasons.html" },
         output: {
           codeSplitting: {
             groups: [{ name: "three", test: /node_modules\/three/ }],

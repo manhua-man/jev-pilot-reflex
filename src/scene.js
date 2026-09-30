@@ -29,6 +29,7 @@ import {
   buildCityRoadNetwork,
   buildHighwayRoadNetwork,
 } from "./road-renderer.js";
+import { AlpinePassage } from "./alpine-world.js";
 let daylight;
 function daylightEnvironment() {
   return (daylight ||= new HDRLoader(assetManager)
@@ -538,6 +539,10 @@ export class DriveScene {
     this.build();
   }
   build() {
+    if (this.alpinePassage) {
+      this.alpinePassage.dispose();
+      this.alpinePassage = null;
+    }
     if (this.scenery) this.scenery.active = false;
     if (this.scene)
       this.scene.traverse((o) => {
@@ -556,11 +561,8 @@ export class DriveScene {
       .then((texture) => {
         if (this.scene !== builtScene) return;
         this.daylightTexture = texture;
-        if (this.weatherMode === "rain" || this.weatherMode === "night") return;
-        builtScene.environment = builtScene.background = texture;
-        builtScene.environmentIntensity = 0.6;
-        builtScene.backgroundIntensity = 0.8;
-        builtScene.backgroundBlurriness = 0.015;
+        builtScene.environment = texture;
+        builtScene.environmentIntensity = 0.45;
       })
       .catch((error) =>
         console.warn("Daylight environment unavailable", error),
@@ -626,12 +628,15 @@ export class DriveScene {
     this.vegetation = new Vegetation(this.scene, world);
     this.static = new THREE.Group();
     const s = this.static;
-    box(s, 3000, 0.8, 3000, 0, -0.7, 0, "#b2c5a0");
-
     // High-fidelity engineered road network
+    const groundMat = pbr("grass", "#5d7a46", 6);
     if (world.type === "highway") {
+      box(s, 3000, 0.8, 3000, 0, -0.7, 0, groundMat);
       this.buildHighway(s, world);
+    } else if (world.type === "alpine") {
+      this.buildAlpine(this.scene, world);
     } else {
+      box(s, 3000, 0.8, 3000, 0, -0.7, 0, groundMat);
       buildCityRoadNetwork(this.scene, s, world, this.glowMaterials);
     }
     for (const o of world.objects) {
@@ -1021,38 +1026,44 @@ export class DriveScene {
         continue;
       }
     }
-    // Batch by material and city block so offscreen geometry is culled,
-    // including buildings outside the moving shadow camera.
-    s.updateMatrixWorld(true);
-    const batches = new Map(),
-      special = [];
-    s.traverse((o) => {
-      if (!o.isMesh) return;
-      if (o.material.map && !o.material.userData.metersPerTile) {
-        const copy = o.clone();
-        o.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
-        special.push(copy);
-        return;
+    if (world.type !== "alpine") {
+      // Batch by material and city block so offscreen geometry is culled,
+      // including buildings outside the moving shadow camera.
+      s.updateMatrixWorld(true);
+      const batches = new Map(),
+        special = [];
+      s.traverse((o) => {
+        if (!o.isMesh || o.isInstancedMesh) return;
+        if (o.material.map && !o.material.userData.metersPerTile) {
+          const copy = o.clone();
+          o.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
+          special.push(copy);
+          return;
+        }
+        const position = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+        const key = `${o.material.uuid}:${Math.floor(position.x / 80)}:${Math.floor(position.z / 80)}`;
+        const batch = batches.get(key) || { material: o.material, geoms: [] };
+        batch.geoms.push(o.geometry.clone().applyMatrix4(o.matrixWorld));
+        batches.set(key, batch);
+      });
+      for (const { material, geoms } of batches.values()) {
+        const mesh = new THREE.Mesh(mergeGeometries(geoms), material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.scene.add(mesh);
+        geoms.forEach((g) => g.dispose());
       }
-      const position = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
-      const key = `${o.material.uuid}:${Math.floor(position.x / 80)}:${Math.floor(position.z / 80)}`;
-      const batch = batches.get(key) || { material: o.material, geoms: [] };
-      batch.geoms.push(o.geometry.clone().applyMatrix4(o.matrixWorld));
-      batches.set(key, batch);
-    });
-    for (const { material, geoms } of batches.values()) {
-      const mesh = new THREE.Mesh(mergeGeometries(geoms), material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-      geoms.forEach((g) => g.dispose());
+      special.forEach((o) => this.scene.add(o));
+      // Source geometries have been copied into batches.
+      s.traverse((o) => o.geometry?.dispose());
+      s.clear();
+      this.vegetation.finish();
+      this.scenery = new SceneryAssets(this.scene, world, this.vegetation);
+    } else {
+      this.scene.add(s);
+      this.vegetation.finish();
+      this.scenery = { active: true, update: () => {} };
     }
-    special.forEach((o) => this.scene.add(o));
-    // Source geometries have been copied into batches.
-    s.traverse((o) => o.geometry?.dispose());
-    s.clear();
-    this.vegetation.finish();
-    this.scenery = new SceneryAssets(this.scene, world, this.vegetation);
     this.lights = [];
     for (const o of world.objects.filter(
       (o) => o.type === "traffic_light" || o.type === "stop_sign",
@@ -1371,6 +1382,12 @@ export class DriveScene {
   buildHighway(group, world) {
     buildHighwayRoadNetwork(this.scene, group, world, this.glowMaterials);
   }
+  buildAlpine(group, world) {
+    this.alpinePassage = new AlpinePassage(group, this.glowMaterials, false);
+    const scale = 10;
+    this.alpinePassage.group.scale.set(scale, scale, scale);
+    this.alpinePassage.group.position.set(0, 0, 0);
+  }
   render(dt, draw = true) {
     const { width, height } = this.viewport;
     if (!width || !height) return;
@@ -1390,6 +1407,25 @@ export class DriveScene {
         o.visible = Math.hypot(o.position.x - v.x, o.position.z - v.z) < 170;
     this.player.position.set(v.x, 0, v.z);
     this.player.rotation.y = -v.heading;
+    if (this.sim.world.type === "alpine") {
+      const scale = 10;
+      const xDio = v.x / scale;
+      const zDio = v.z / scale;
+      const along = xDio * 0.707106 + zDio * 0.707106;
+      const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
+      const smooth = (x, min, max) => {
+        const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
+        return t * t * (3 - 2 * t);
+      };
+      const roadH = 0.03 + (1 - smooth(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
+      this.player.position.y = roadH * scale;
+
+      const forwardAlong = along + 0.24 / scale;
+      const rearAlong = along - 0.24 / scale;
+      const hFront = (0.03 + (1 - smooth(Math.abs(forwardAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
+      const hRear = (0.03 + (1 - smooth(Math.abs(rearAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
+      this.player.rotation.x = Math.atan2(hFront - hRear, 0.48);
+    }
     this.wheelDirection = Math.sign(v.speed) || this.wheelDirection;
     if (this.heroCar && !this.sim.paused && !this.sim.crash)
       updateHeroWheels(
@@ -1408,7 +1444,18 @@ export class DriveScene {
     for (const p of this.sim.traffic) {
       const m = this.vehicles.get(p.id);
       if (m) {
-        m.position.set(p.x, 0, p.z);
+        let py = 0;
+        if (this.sim.world.type === "alpine") {
+          const scale = 10;
+          const pAlong = (p.x * 0.707106 + p.z * 0.707106) / scale;
+          const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
+          const smooth = (x, min, max) => {
+            const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
+            return t * t * (3 - 2 * t);
+          };
+          py = (0.03 + (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065) * scale;
+        }
+        m.position.set(p.x, py, p.z);
         m.rotation.y = -p.heading;
       }
     }
@@ -1819,6 +1866,9 @@ export class DriveScene {
     );
     if (this.worldActionModel) {
       this.worldActionModel.update(this.sim, dt);
+    }
+    if (this.alpinePassage) {
+      this.alpinePassage.update(dt, this.seasons);
     }
 
     if (draw) this.renderer.render(this.scene, this.camera);
