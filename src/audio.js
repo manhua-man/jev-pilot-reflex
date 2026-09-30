@@ -76,6 +76,38 @@ export class DriveAudio {
 
     // 3. Procedural Skid Noise (Bandpassed noise buffer)
     this.setupSkid(ctx);
+
+    // 4. Procedural Alpine Wind & Air Ambience
+    this.setupWind(ctx);
+  }
+
+  setupWind(ctx) {
+    const bufferSize = ctx.sampleRate * 2;
+    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let lastOut = 0.0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      output[i] = (lastOut + 0.02 * white) / 1.02;
+      lastOut = output[i];
+      output[i] *= 1.8;
+    }
+    this.windSource = ctx.createBufferSource();
+    this.windSource.buffer = noiseBuffer;
+    this.windSource.loop = true;
+
+    this.windFilter = ctx.createBiquadFilter();
+    this.windFilter.type = "bandpass";
+    this.windFilter.frequency.setValueAtTime(380, ctx.currentTime);
+    this.windFilter.Q.setValueAtTime(1.8, ctx.currentTime);
+
+    this.windGain = ctx.createGain();
+    this.windGain.gain.setValueAtTime(0.015, ctx.currentTime);
+
+    this.windSource.connect(this.windFilter);
+    this.windFilter.connect(this.windGain);
+    this.windGain.connect(this.masterGain);
+    this.windSource.start();
   }
 
   setupRain(ctx) {
@@ -292,5 +324,18 @@ export class DriveAudio {
     const isRaining = sim.weather === "rain" || sim.weather === "night_rain";
     const targetRainVol = isRaining ? 0.15 : 0.0001;
     this.rainGain.gain.setTargetAtTime(targetRainVol, now, 0.2);
+
+    // 6. Alpine Wind & Air Ambience Modulation
+    if (this.windFilter && this.windGain) {
+      const seasonWindFreq =
+        sim.season === "winter" ? 520 : sim.season === "autumn" ? 420 : 340;
+      this.windFilter.frequency.setTargetAtTime(
+        seasonWindFreq + speed * 12,
+        now,
+        0.2,
+      );
+      const targetWindVol = Math.min(0.065, 0.012 + (speed / 35) * 0.038);
+      this.windGain.gain.setTargetAtTime(targetWindVol, now, 0.2);
+    }
   }
 }

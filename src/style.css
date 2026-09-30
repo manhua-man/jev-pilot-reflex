@@ -1778,6 +1778,94 @@ body.crashed .world-picker {
 }
 
 /* ==========================================================================
+   Four-Seasons Liquid Glass Dock Controls
+   ========================================================================== */
+
+.seasons-dock-picker,
+.times-dock-picker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  height: 28px;
+  margin-right: 4px;
+}
+
+.season-btn,
+.time-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.season-btn:hover,
+.time-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+
+.season-btn.active {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 6px rgba(16, 185, 129, 0.38);
+}
+
+.season-btn[data-season="0"].active {
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  box-shadow: 0 1px 6px rgba(236, 72, 153, 0.38);
+}
+
+.season-btn[data-season="1"].active {
+  background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+  box-shadow: 0 1px 6px rgba(16, 185, 129, 0.38);
+}
+
+.season-btn[data-season="2"].active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  box-shadow: 0 1px 6px rgba(245, 158, 11, 0.38);
+}
+
+.season-btn[data-season="3"].active {
+  background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+  box-shadow: 0 1px 6px rgba(56, 189, 248, 0.38);
+}
+
+.time-btn.active {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #ffffff;
+  box-shadow: 0 1px 6px rgba(249, 115, 22, 0.38);
+}
+
+.time-btn[data-time="0"].active {
+  background: linear-gradient(135deg, #f97316 0%, #c2410c 100%);
+  box-shadow: 0 1px 6px rgba(249, 115, 22, 0.38);
+}
+
+.time-btn[data-time="1"].active {
+  background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
+  box-shadow: 0 1px 6px rgba(234, 179, 8, 0.38);
+}
+
+.time-btn[data-time="2"].active {
+  background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  box-shadow: 0 1px 6px rgba(99, 102, 241, 0.38);
+}
+
+/* ==========================================================================
    Weather Mode Picker & Audio Controls
    ========================================================================== */
 

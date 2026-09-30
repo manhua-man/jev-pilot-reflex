@@ -17,6 +17,8 @@ function texture(name, kind) {
   return maps.get(key);
 }
 
+import { patchMaterial } from "./seasons-environment.js";
+
 export function pbr(name, tint = "#ffffff", scale = 3) {
   const key = `${name}:${tint}`;
   if (!materials.has(key)) {
@@ -33,6 +35,45 @@ export function pbr(name, tint = "#ffffff", scale = 3) {
       metalness: 0,
     });
     material.userData.metersPerTile = scale;
+
+    if (name === "grass") {
+      patchMaterial(material, {
+        key: `grass:${tint}`,
+        worldPos: true,
+        worldNormal: true,
+        heightFog: true,
+        fragmentColor: /* glsl */ `
+          vec3 wp = vWPos;
+          float n1 = sn_fbm(wp.xz * 0.9);
+          float n2 = sn_noise(wp.xz * 6.5);
+          vec3 col = diffuseColor.rgb;
+
+          // Spring lush saturation & meadow tint
+          float lum = dot(col, vec3(0.299, 0.587, 0.114));
+          col = mix(col, mix(vec3(lum), col, 1.0 + 0.55 * uLush) * uMeadowTint, 1.0);
+
+          // Autumn dry golden patches
+          float dryMask = uDry * smoothstep(0.42, 0.66, n1 + n2 * 0.15);
+          col = mix(col, vec3(0.45, 0.30, 0.10) * (0.8 + n2 * 0.4), dryMask * 0.75);
+
+          // Winter frost
+          col = mix(col, vec3(0.65, 0.70, 0.75), uFrost * (0.35 + 0.25 * n2));
+
+          // Winter snow coverage with elevation and noise
+          float snowEdge = wp.y + (n1 - 0.5) * 1.5 + (n2 - 0.5) * 0.35;
+          float snowBand = smoothstep(uSnowLine - 0.3, uSnowLine + 0.4, snowEdge);
+          float flatMask = smoothstep(0.4 - 0.15 * uSnowCoverage, 0.8, abs(vWNrm.y));
+          float snSnow = max(snowBand * flatMask, uSnowCoverage * 0.88);
+          col = mix(col, vec3(0.88, 0.92, 0.97) * (0.94 + 0.06 * n2), snSnow);
+
+          diffuseColor.rgb = col;
+        `,
+        fragmentRoughness: /* glsl */ `
+          roughnessFactor = mix(roughnessFactor, 0.65, uSnowCoverage * 0.5);
+        `,
+      });
+    }
+
     materials.set(key, material);
   }
   return materials.get(key);

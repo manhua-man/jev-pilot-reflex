@@ -19,6 +19,16 @@ import { detailedCar, detailedHeavyTruck } from "./vehicle-model.js";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { assetManager, assetsReady } from "./asset-loading.js";
 import { renderProfile } from "./render-profile.js";
+import {
+  SeasonController,
+  ProceduralSky,
+  SeasonalParticles,
+  U,
+} from "./seasons-environment.js";
+import {
+  buildCityRoadNetwork,
+  buildHighwayRoadNetwork,
+} from "./road-renderer.js";
 let daylight;
 function daylightEnvironment() {
   return (daylight ||= new HDRLoader(assetManager)
@@ -555,12 +565,16 @@ export class DriveScene {
       .catch((error) =>
         console.warn("Daylight environment unavailable", error),
       );
+    this.glowMaterials = [];
+    this.seasons = new SeasonController(1, 1);
+    this.sky = new ProceduralSky(this.scene);
+    this.weatherParticles = new SeasonalParticles(this.scene);
+
     this.weatherMode = "clear";
-    this.scene.background = new THREE.Color("#b7c9db");
     this.scene.fog = new THREE.Fog("#b7c6d0", 230, 1050);
-    this.hemiLight = new THREE.HemisphereLight("#d5e4f8", "#4e503a", 0.4);
+    this.hemiLight = new THREE.HemisphereLight("#cfe4ff", "#4d5a3c", 0.8);
     this.scene.add(this.hemiLight);
-    this.sun = new THREE.DirectionalLight("#fff0d9", 3.4);
+    this.sun = new THREE.DirectionalLight("#fff5e8", 3.4);
     this.sun.position.set(-60, 110, 40);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(
@@ -613,80 +627,12 @@ export class DriveScene {
     this.static = new THREE.Group();
     const s = this.static;
     box(s, 3000, 0.8, 3000, 0, -0.7, 0, "#b2c5a0");
-    // Roads, sidewalks, broken center lines, crossings.
-    if (world.type === "highway") this.buildHighway(s, world);
-    for (const e of world.type === "highway" ? [] : world.edges) {
-      const a = world.byId[e.a],
-        b = world.byId[e.b];
-      if (!a || !b) continue;
-      const len = dist(a, b),
-        x = (a.x + b.x) / 2,
-        z = (a.z + b.z) / 2,
-        h = heading(a, b),
-        roadWidth = e.width || 20;
 
-      // Concrete sidewalk base
-      box(s, roadWidth + 4, 0.26, len + 0.2, x, -0.12, z, "#d8d6c9", -h);
-
-      // Dark asphalt road surface
-      box(s, roadWidth, 0.1, len + 0.3, x, 0.015, z, "#262b30", -h);
-
-      // Double solid yellow center lines (双黄实线 at ±0.26m)
-      for (const yellowOffset of [-0.26, 0.26]) {
-        const yp = move({ x, z }, h + Math.PI / 2, yellowOffset);
-        box(s, 0.14, 0.022, Math.max(1, len - 16), yp.x, 0.082, yp.z, "#facc15", -h);
-      }
-
-      // Lane dividing dashed lines (4车道划分白色虚线 at ±roadWidth/4)
-      const laneOffset = roadWidth / 4;
-      for (let k = 14; k < len - 14; k += 8) {
-        for (const sd of [-laneOffset, laneOffset]) {
-          const dp = move(move(a, h, k), h + Math.PI / 2, sd);
-          box(s, 0.15, 0.02, 3.5, dp.x, 0.081, dp.z, "#f8fafc", -h);
-        }
-      }
-
-      // Road shoulder / curb boundary lines (外侧白色实线)
-      const edgeOffset = roadWidth / 2 - 0.7;
-      for (const sd of [-edgeOffset, edgeOffset]) {
-        const ep = move({ x, z }, h + Math.PI / 2, sd);
-        box(s, 0.18, 0.018, Math.max(1, len - 16), ep.x, 0.080, ep.z, "#f8fafc", -h);
-      }
-    }
-
-    for (const n of world.nodes.filter(
-      (node) => (world.type !== "highway" || node.townJunction) && node.control !== "none",
-    )) {
-      box(s, 20.1, 0.1, 20.1, n.x, 0.018, n.z, "#262b30");
-      for (const id of n.neighbors) {
-        const b = world.byId[id];
-        if (!b) continue;
-        const dx = Math.sign(b.x - n.x),
-          dz = Math.sign(b.z - n.z);
-        // Pedestrian crosswalk (zebra stripes across all 4 lanes: -8.0m to +8.0m)
-        for (let k = -8.0; k <= 8.0; k += 1.6)
-          box(
-            s,
-            dx ? 2.2 : 0.8,
-            0.021,
-            dx ? 0.8 : 2.2,
-            n.x + dx * 11 + (dz ? k : 0),
-            0.081,
-            n.z + dz * 11 + (dx ? k : 0),
-            "#f8fafc",
-          );
-        // Stop line across incoming lanes (0 to 9.2m)
-        box(
-          s,
-          dx ? 0.35 : 9.2,
-          0.025,
-          dx ? 9.2 : 0.35,
-          n.x + dx * 13.5 + (dz ? dz * 4.6 : 0),
-          0.083,
-          n.z + dz * 13.5 + (dx ? -dx * 4.6 : 0),
-          "#f8fafc",
-        );
-      }
+    // High-fidelity engineered road network
+    if (world.type === "highway") {
+      this.buildHighway(s, world);
+    } else {
+      buildCityRoadNetwork(this.scene, s, world, this.glowMaterials);
     }
     for (const o of world.objects) {
       if (o.type === "hill") {
@@ -874,6 +820,24 @@ export class DriveScene {
       if (o.type === "streetlight") {
         cyl(s, 0.075, o.height, o.x, o.height / 2, o.z, "#596b61");
         box(s, 1.3, 0.12, 0.6, o.x - 0.5, o.height, o.z, "#e4e5d7");
+        if (!this.streetlightMat) {
+          this.streetlightMat = new THREE.MeshStandardMaterial({
+            color: 0xfff0c4,
+            emissive: new THREE.Color(0xffd15c),
+            emissiveIntensity: 0.0,
+            roughness: 0.2,
+          });
+          this.glowMaterials.push({
+            material: this.streetlightMat,
+            key: "streetlights",
+          });
+        }
+        const lamp = new THREE.Mesh(
+          new THREE.BoxGeometry(0.8, 0.04, 0.4),
+          this.streetlightMat,
+        );
+        lamp.position.set(o.x - 0.5, o.height - 0.06, o.z);
+        s.add(lamp);
         continue;
       }
       if (o.type === "parcel") {
@@ -1405,122 +1369,7 @@ export class DriveScene {
     this.renderer.dispose();
   }
   buildHighway(group, world) {
-    const pts = world.roadSamples;
-    const strip = (offset, width, color, y, path = pts, skip = null) => {
-      const positions = [],
-        indices = [];
-      for (let i = 0; i < path.length; i++) {
-        const a = path[Math.max(0, i - 1)],
-          b = path[Math.min(path.length - 1, i + 1)],
-          dx = b.x - a.x,
-          dz = b.z - a.z,
-          len = Math.hypot(dx, dz) || 1;
-        for (const side of [-1, 1])
-          positions.push(
-            path[i].x - (dz / len) * (offset + (side * width) / 2),
-            y,
-            path[i].z + (dx / len) * (offset + (side * width) / 2),
-          );
-        if (i < path.length - 1 && !skip?.(path[i])) {
-          const k = i * 2;
-          indices.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
-        }
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(positions, 3),
-      );
-      geo.setIndex(indices);
-      geo.computeVertexNormals();
-      const mesh = new THREE.Mesh(metricUV(geo, mat(color)), mat(color));
-      mesh.receiveShadow = true;
-      this.scene.add(mesh);
-    };
-    strip(0, 30, "#bbc5b4", 0.01);
-    strip(0, 25, "#70817c", 0.045);
-    strip(0, 2.1, "#a8b89c", 0.09);
-    for (const offset of [-11.7, 11.7])
-      strip(
-        offset,
-        0.14,
-        "#e5e9d8",
-        0.08,
-        pts,
-        offset > 0
-          ? (p) =>
-              world.shoulderOpenings?.some(
-                ([start, end]) => p.s >= start && p.s <= end,
-              )
-          : null,
-      );
-    for (let i = 0; i < pts.length - 1; i += 4) {
-      const p = pts[i],
-        q = pts[i + 1],
-        h = Math.atan2(q.x - p.x, p.z - q.z);
-      for (const side of [-1, 1]) {
-        const off = side * 7;
-        box(
-          group,
-          0.13,
-          0.018,
-          3.2,
-          p.x + Math.cos(h) * off,
-          0.085,
-          p.z + Math.sin(h) * off,
-          "#dce2d0",
-          -h,
-        );
-      }
-      if (i % 12 === 0)
-        box(group, 0.18, 0.75, 1, p.x, 0.45, p.z, "#bac5b7", -h);
-    }
-    strip(0, 0.25, "#bac5b7", 0.8);
-    for (const road of world.connectorRoads || []) {
-      const path = road.points;
-      const inJunction = (p) =>
-        world.nodes.some((n) => n.townJunction && dist(n, p) < 11);
-      if (road.twoWay) strip(0, road.width + 3.6, "#d8d6c9", 0.012, path);
-      strip(0, road.width, "#70817c", 0.05, path);
-      for (const side of [-1, 1]) {
-        // Paint a broken boundary where an acceleration/deceleration lane
-        // overlaps the carriageway, rather than a solid line across the merge.
-        strip(
-          side * (road.width / 2 - 0.3),
-          0.12,
-          "#e5e9d8",
-          0.085,
-          path,
-          (p) =>
-            inJunction(p) ||
-            (["merge", "exit"].includes(road.kind) &&
-              Math.floor(p.s / 4) % 2 === 1),
-        );
-      }
-      if (road.twoWay)
-        strip(
-          0,
-          0.13,
-          "#d5d7b4",
-          0.087,
-          path,
-          (p) => inJunction(p) || Math.floor(p.s / 4) % 2 === 1,
-        );
-    }
-    if (world.destinationStopLine) {
-      const line = world.destinationStopLine;
-      box(
-        group,
-        4.8,
-        0.025,
-        0.25,
-        line.x,
-        0.088,
-        line.z,
-        "#ecebd9",
-        -line.heading,
-      );
-    }
+    buildHighwayRoadNetwork(this.scene, group, world, this.glowMaterials);
   }
   render(dt, draw = true) {
     const { width, height } = this.viewport;
@@ -1921,8 +1770,43 @@ export class DriveScene {
     this.look.lerp(look, this.snap || insideCar ? 1 : 1 - Math.exp(-dt * 6));
     this.camera.lookAt(this.look);
     this.snap = false;
-    this.sun.position.set(v.x - 55, 85, v.z + 50);
-    this.sun.target.position.set(v.x, 0, v.z);
+    if (this.seasons) {
+      this.seasons.update(dt);
+      const T = this.seasons.time;
+      const S = this.seasons.season;
+
+      if (this.sky) this.sky.update(this.seasons, this.camera.position);
+      if (this.weatherParticles) this.weatherParticles.update(this.camera.position);
+
+      this.sun.color.copy(T.sunColor);
+      this.sun.intensity = T.sunIntensity * (1 - S.cloudShade * 0.35);
+      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(150).add(new THREE.Vector3(v.x, 0, v.z));
+      this.sun.target.position.set(v.x, 0, v.z);
+
+      this.hemiLight.color.copy(T.hemiSky);
+      this.hemiLight.groundColor.copy(T.hemiGround);
+      this.hemiLight.intensity = T.hemiIntensity * (1 + S.snowCoverage * 0.2);
+
+      if (this.scene.fog) {
+        this.scene.fog.color.copy(U.uFogColor.value);
+      }
+      this.renderer.toneMappingExposure = T.exposure;
+
+      if (this.headlights) {
+        this.headlights.visible = T.night > 0.1 || T.evening > 0.5 || S.wetness > 0.3 || this.weatherMode === "rain" || this.weatherMode === "night";
+      }
+
+      if (this.glowMaterials) {
+        for (const g of this.glowMaterials) {
+          if (g.key === "reflector") g.material.emissiveIntensity = 0.35 + T.night * 1.5 + T.evening * 0.4;
+          else if (g.key === "streetlights") g.material.emissiveIntensity = T.streetlights;
+          else if (g.key === "window") g.material.emissiveIntensity = T.windows;
+        }
+      }
+    } else {
+      this.sun.position.set(v.x - 55, 85, v.z + 50);
+      this.sun.target.position.set(v.x, 0, v.z);
+    }
     this.vectors.render(
       v,
       this.camera,
@@ -1939,41 +1823,30 @@ export class DriveScene {
 
     if (draw) this.renderer.render(this.scene, this.camera);
   }
+  setSeason(index) {
+    if (this.seasons) this.seasons.setSeason(index);
+  }
+  setTimeOfDay(index) {
+    if (this.seasons) this.seasons.setTime(index);
+  }
   setWeather(mode) {
     this.weatherMode = mode;
     if (mode === "rain") {
-      this.scene.background = new THREE.Color("#273549");
-      this.scene.environment = null;
-      this.scene.fog = new THREE.Fog("#273549", 25, 220);
-      this.sun.intensity = 0.9;
-      this.sun.color.set("#94a3b8");
-      this.hemiLight.intensity = 0.22;
-      this.hemiLight.color.set("#64748b");
+      if (this.seasons) {
+        this.seasons.setTime(0);
+        U.uWetness.value = 0.85;
+      }
       if (this.rainGroup) this.rainGroup.visible = true;
       if (this.headlights) this.headlights.visible = true;
     } else if (mode === "night") {
-      this.scene.background = new THREE.Color("#070b14");
-      this.scene.environment = null;
-      this.scene.fog = new THREE.Fog("#070b14", 12, 140);
-      this.sun.intensity = 0.05;
-      this.sun.color.set("#38bdf8");
-      this.hemiLight.intensity = 0.06;
-      this.hemiLight.color.set("#1e293b");
+      if (this.seasons) this.seasons.setTime(2);
       if (this.rainGroup) this.rainGroup.visible = false;
       if (this.headlights) this.headlights.visible = true;
     } else {
-      if (this.daylightTexture) {
-        this.scene.background = this.scene.environment = this.daylightTexture;
-        this.scene.environmentIntensity = 0.6;
-        this.scene.backgroundIntensity = 0.8;
-      } else {
-        this.scene.background = new THREE.Color("#b7c9db");
+      if (this.seasons) {
+        this.seasons.setTime(1);
+        U.uWetness.value = this.seasons.season.wetness || 0.05;
       }
-      this.scene.fog = new THREE.Fog("#b7c6d0", 230, 1050);
-      this.sun.intensity = 3.4;
-      this.sun.color.set("#fff0d9");
-      this.hemiLight.intensity = 0.4;
-      this.hemiLight.color.set("#d5e4f8");
       if (this.rainGroup) this.rainGroup.visible = false;
       if (this.headlights) this.headlights.visible = false;
     }
