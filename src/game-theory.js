@@ -85,6 +85,7 @@ export class GameTrafficManager {
       name: name || `NPC-${this.nextId}`,
       role: role || "follow",
       state: role === "cut_in" ? "ready_cut_in" : "cruising",
+      type: "car",
       x,
       z,
       heading: h,

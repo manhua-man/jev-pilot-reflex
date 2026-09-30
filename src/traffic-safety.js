@@ -337,13 +337,16 @@ export function predictTrafficConflict(vehicle, obstacles) {
     for (const { object: pose } of prediction(time, ghost)) {
       const other = originals.get(pose.id);
       // Cover motion between samples and leave extra room around a rider.
-      const buffer =
-        (other.type === "motorcycle"
+      // Differentiate crossing pedestrians from peaceful sidewalk pedestrians.
+      const minBuffer =
+        other.type === "motorcycle"
           ? 0.3
           : other.type === "pedestrian"
-            ? 0.35
-            : 0.12) +
-        Math.min(0.8, ((ghost.speed + Math.abs(pose.speed || 0)) * step) / 2);
+            ? (other.crossing || other.isJaywalker ? 0.35 : 0.05)
+            : 0.12;
+      const buffer =
+        minBuffer +
+        Math.min(0.35, ((ghost.speed + Math.abs(pose.speed || 0)) * step) / 3);
       if (footprintClearance(ghost, pose) > buffer) continue;
       const fromBehind =
         rearFollower(vehicle, other) &&

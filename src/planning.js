@@ -66,8 +66,8 @@ export function physics(car, steer, target, dt, friction = 1.0) {
   car.speed += clamp(target - car.speed, -maxBraking * dt, maxAcc * dt);
   const actual = car.wheelSteering ?? car.steering ?? 0;
   car.wheelSteering = actual + clamp(steer - actual, -1.8 * dt, 1.8 * dt);
-  integratePose(car, car.wheelSteering, dt);
   car.steering = steer;
+  integratePose(car, car.wheelSteering, dt);
 }
 
 // Free play uses pedals. Rolling resistance, engine braking, and aerodynamic
@@ -109,12 +109,12 @@ export function pedalPhysics(car, steer, throttle, brake, dt, friction = 1.0) {
   const limit =
     1 + (speedLimit - 1) * clamp((Math.abs(car.speed) - 3) / 5, 0, 1);
   car.wheelSteering = shaped * limit;
+  car.steering = steer;
   integratePose(car, car.wheelSteering, dt);
 }
 
 function integratePose(car, steer, dt) {
   if (Math.abs(car.speed) < 0.01) car.speed = 0;
-  car.steering = steer;
   car.heading = angle(
     car.heading + car.speed * steeringCurvature(steer, car.speed) * dt,
   );

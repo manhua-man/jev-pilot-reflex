@@ -1631,9 +1631,10 @@ function updateUI() {
 }
 function animate(now) {
   requestAnimationFrame(animate);
-  const dt = Math.min((now - lastNow) / 1000, 0.2);
-  lastNow = now;
-  if (document.hidden || loading) return;
+  const pNow = performance.now();
+  const dt = Math.max(0, Math.min((pNow - lastNow) / 1000, 0.1));
+  lastNow = pNow;
+  if (dt <= 0 || document.hidden || loading) return;
   touch.sync();
   if (!sim.paused && !sim.crash) {
     if (!sim.autopilot) {
@@ -1648,7 +1649,9 @@ function animate(now) {
       sim.pedals.brake = keys.has("Space") ? 1 : touch.brake;
       sim.steeringInput = steer || touch.steering;
       sim.player.target = 0;
-    } else if (!lastApplied || now - lastApplied > 1800) sim.player.target = 0;
+    } else if (lastApplied && pNow - lastApplied > 5000) {
+      sim.player.target = Math.max(0, sim.player.target - 2.5 * dt);
+    }
     // Preserve real elapsed time on slower displays using bounded physics substeps.
     const steps = Math.max(1, Math.ceil(dt / 0.025));
     for (let i = 0; i < steps; i++) sim.step(dt / steps);
@@ -1662,12 +1665,14 @@ function animate(now) {
   if (scene.routeVersion !== sim.routeVersion) {
     scene.routeVersion = sim.routeVersion;
     generation++;
-    lastApplied = 0;
-    lastDecision = null;
-    lastInput = null;
-    lastContext = null;
-    nextDecision = 0;
-    scene.vectors.clear();
+    if (!sim.endlessCruising) {
+      lastApplied = 0;
+      lastDecision = null;
+      lastInput = null;
+      lastContext = null;
+      nextDecision = 0;
+      scene.vectors.clear();
+    }
     const destination = sim.player.route.points.at(-1);
     scene.destination.position.set(destination.x, 0.2, destination.z);
   }

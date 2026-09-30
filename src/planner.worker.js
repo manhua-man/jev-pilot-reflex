@@ -18,6 +18,9 @@ self.onmessage = ({ data }) => {
       locks: new Map(snapshot.locks),
       courtesy: new Map(snapshot.courtesy),
     });
+    if (snapshot.agents) {
+      simulation.gameManager = { agents: snapshot.agents };
+    }
     simulation.world.route = simulation.player.route;
     if (kind === "reroute") {
       self.postMessage({

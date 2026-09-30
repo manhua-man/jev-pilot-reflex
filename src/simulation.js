@@ -474,7 +474,11 @@ export class Simulation {
     const planningMax = max;
     const conflict =
       v === this.player
-        ? predictTrafficConflict(v, [...this.traffic, ...this.pedestrians])
+        ? predictTrafficConflict(v, [
+            ...this.traffic,
+            ...this.pedestrians,
+            ...(this.gameManager?.agents || []),
+          ])
         : null;
     if (conflict?.braking_reduces_risk && conflict.max_speed_mps < max) {
       max = conflict.max_speed_mps;
@@ -645,7 +649,14 @@ export class Simulation {
         } else {
           this.aebTTC = 5.0;
         }
-        const hasJaywalker = this.pedestrians.some((p) => p.isJaywalker && dist(p, v) < 22);
+        const hasJaywalker = this.pedestrians.some((p) => {
+          if (!p.isJaywalker) return false;
+          const dx = p.x - v.x;
+          const dz = p.z - v.z;
+          const forward = dx * Math.sin(v.heading) - dz * Math.cos(v.heading);
+          const lateral = dx * Math.cos(v.heading) + dz * Math.sin(v.heading);
+          return forward > -1.0 && forward < 26.0 && Math.abs(lateral) < 4.5;
+        });
         const isEmergency = hasJaywalker || (this.aebTTC < 1.1 && v.speed > 2.0);
 
         if (this.aebTimer > 0) {
@@ -655,11 +666,16 @@ export class Simulation {
           this.aebTimer = Math.max(this.aebTimer, 1.8);
           this.aebDecel = -8.5;
         }
+        const wasAeb = this.aebActive;
         this.aebActive = this.aebTimer > 0;
         if (this.aebActive) {
           target = 0;
           this.pedals.brake = 1.0;
           this.pedals.throttle = 0;
+          if (!this.brakeReason) this.brakeReason = "AEB Emergency Stop";
+        } else if (wasAeb && !this.aebActive) {
+          this.pedals.brake = 0;
+          this.aebDecel = 0;
         }
       }
     }
@@ -1686,6 +1702,23 @@ export class Simulation {
         }
         v.route.length = v.route.points.at(-1).s;
         v.route.ids = [...v.route.ids, ...pathIds.slice(1)];
+        if (legRoute.crossings?.length) {
+          v.route.crossings.push(
+            ...legRoute.crossings.map((c) => ({
+              ...c,
+              stopS: c.stopS + startOffset,
+            }))
+          );
+        }
+        if (legRoute.sections?.length) {
+          v.route.sections.push(
+            ...legRoute.sections.map((sec) => ({
+              ...sec,
+              startS: sec.startS + startOffset,
+              endS: sec.endS + startOffset,
+            }))
+          );
+        }
         this.world.destination = nextDest.id;
         this.destinationApproach = pathIds.slice(-2);
         this.destinationPoint = { ...v.route.points.at(-1) };
