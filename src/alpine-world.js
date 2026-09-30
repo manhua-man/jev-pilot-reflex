@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { U, patchMaterial, GLSL_NOISE, SHARED_DECL, HEIGHT_FOG_CODE } from './seasons-environment.js';
+import { dist, heading, move } from './math.js';
 
 const QUALITY = {
     GRASS_COUNT: 4500,
@@ -168,42 +169,86 @@ function createSafeCanvas(w = 256, h = 256) {
             return h;
         }
 
-        function getTerrainHeight(x, z) {
-            if (Math.abs(x) > HALF_WORLD + 1e-4 || Math.abs(z) > HALF_WORLD + 1e-4) return -3.5;
-            let h = BASE_HEIGHT + mountainHeight(x, z);
+        function getContinuousAlpineHeight(x, z, world = null) {
+            const inGenesis = Math.abs(x) <= 7.5 && Math.abs(z) <= 7.5;
+            let h = BASE_HEIGHT;
 
-            // Gentle rolling hills
-            h += valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
+            if (inGenesis) {
+                h += mountainHeight(x, z);
+                h += valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
 
-            // Shallow stream channel
-            const stream = getStreamMetrics(x, z);
-            const streamDist = stream.distance;
-            if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
+                const stream = getStreamMetrics(x, z);
+                const streamDist = stream.distance;
+                if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
 
-            // Flat road carve along the x = z diagonal
-            const latDist = getLateralRoadDist(x, z);
-            const roadShoulder = ROAD_WIDTH / 2 + 0.6;
-            if (latDist < roadShoulder) {
-                const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
-                const s = t * t * (3 - 2 * t);
-                h = 0.05 * (1 - s) + h * s;
-            }
+                const latDist = getLateralRoadDist(x, z);
+                const roadShoulder = ROAD_WIDTH / 2 + 0.6;
+                if (latDist < roadShoulder) {
+                    const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
+                    const s = t * t * (3 - 2 * t);
+                    h = 0.05 * (1 - s) + h * s;
+                }
 
-            // Stream banks outside the bridge deck → real underpass depth
-            if (streamDist < 0.62) {
-                const channel = 1 - smoothstep(streamDist, 0.08, 0.62);
-                const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, 1.08);
-                const nearBridge = 1 - smoothstep(latDist, 1.18, 1.62);
-                h -= channel * outsideDeck * nearBridge * 0.42;
-            }
+                if (streamDist < 0.62) {
+                    const channel = 1 - smoothstep(streamDist, 0.08, 0.62);
+                    const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, 1.08);
+                    const nearBridge = 1 - smoothstep(latDist, 1.18, 1.62);
+                    h -= channel * outsideDeck * nearBridge * 0.42;
+                }
 
-            // Downstream bed follows the descending water surface (including the cascade)
-            if (stream.progress >= BRIDGE_STREAM_PROGRESS && streamDist < 0.68) {
-                const water = getDownstreamWaterHeight(stream.progress);
-                const bed = lerp(h, water - 0.085, 1 - smoothstep(streamDist, 0.06, 0.68));
-                h = Math.min(h, bed);
+                if (stream.progress >= BRIDGE_STREAM_PROGRESS && streamDist < 0.68) {
+                    const water = getDownstreamWaterHeight(stream.progress);
+                    const bed = lerp(h, water - 0.085, 1 - smoothstep(streamDist, 0.06, 0.68));
+                    h = Math.min(h, bed);
+                }
+            } else {
+                // Procedural terrain: continuous multi-octave mountain ridges & valleys
+                const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
+                const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
+                const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
+                const massif = Math.pow(ridge1, 1.6) * 3.5 + Math.pow(ridge2, 1.4) * 1.2;
+                const rolling = valueNoise(x * 0.22, z * 0.22) * 0.8 + valueNoise(x * 0.55, z * 0.55) * 0.35;
+                h += massif + rolling;
+
+                // Seamless blend with genesis boundary
+                const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
+                if (dEdge < 2.5) {
+                    const blend = clamp(dEdge / 2.5, 0, 1);
+                    const genH = BASE_HEIGHT + valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
+                    h = lerp(genH, h, blend);
+                }
+
+                // Smooth road corridor carving
+                if (world && world.edges && world.byId) {
+                    let minDist = Infinity;
+                    let targetRoadH = 0.05;
+                    for (const e of world.edges) {
+                        const a = world.byId[e.a], b = world.byId[e.b];
+                        if (!a || !b) continue;
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const l2 = dx * dx + dz * dz;
+                        if (!l2) continue;
+                        const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
+                        const px = a.x + t * dx, pz = a.z + t * dz;
+                        const d = Math.hypot(x - px, z - pz);
+                        if (d < minDist) {
+                            minDist = d;
+                            targetRoadH = 0.05 + valueNoise(px * 0.05, pz * 0.05) * 0.5;
+                        }
+                    }
+                    const roadShoulder = ROAD_WIDTH / 2 + 0.85;
+                    if (minDist < roadShoulder) {
+                        const t = clamp((minDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
+                        const s = t * t * (3 - 2 * t);
+                        h = targetRoadH * (1 - s) + h * s;
+                    }
+                }
             }
             return h;
+        }
+
+        function getTerrainHeight(x, z) {
+            return getContinuousAlpineHeight(x, z, null);
         }
 
         const nonIndexed = (g) => (g.index ? g.toNonIndexed() : g);
@@ -303,6 +348,72 @@ function createSafeCanvas(w = 256, h = 256) {
         const snowSlab = (w, h, d) => new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0);
 
 
+        let cachedAlpineTerrainMaterial = null;
+        function getSharedTerrainMaterial() {
+            if (!cachedAlpineTerrainMaterial) {
+                cachedAlpineTerrainMaterial = patchMaterial(
+                    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02, flatShading: true }),
+                    {
+                        key: 'terrain',
+                        worldPos: true,
+                        vertexPars: 'attribute vec3 aMat; varying vec3 vMat;',
+                        vertexBegin: 'vMat = aMat;',
+                        fragmentPars: 'varying vec3 vMat;',
+                        fragmentColor: /* glsl */`
+                            vec3 wp = vWPos;
+                            vec3 fN = normalize(cross(dFdx(wp), dFdy(wp)) + vec3(0.0, 1e-6, 0.0));
+                            float up = abs(fN.y);
+                            float n1 = sn_fbm(wp.xz * 0.9);
+                            float n2 = sn_noise(wp.xz * 6.5);
+                            float meadow = vMat.x;
+                            vec3 col = diffuseColor.rgb;
+
+                            // Spring: lush saturation. All seasons: meadow tint.
+                            float lum = dot(col, vec3(0.299, 0.587, 0.114));
+                            col = mix(col, mix(vec3(lum), col, 1.0 + 0.55 * uLush) * uMeadowTint, meadow);
+                            // Autumn: dry golden patches.
+                            float dryMask = uDry * meadow * smoothstep(0.42, 0.66, n1 + n2 * 0.15);
+                            col = mix(col, vec3(0.4, 0.27, 0.09) * (0.8 + n2 * 0.4), dryMask * 0.75);
+                            // Winter: frost on the meadow.
+                            col = mix(col, vec3(0.6, 0.66, 0.7), uFrost * meadow * (0.35 + 0.25 * n2));
+
+                            // Snow: height line + noise, only on flat enough faces (steep rock stays bare).
+                            float snowEdge = wp.y + (n1 - 0.5) * 1.1 + (n2 - 0.5) * 0.25;
+                            float snowBand = smoothstep(uSnowLine - 0.2, uSnowLine + 0.3, snowEdge);
+                            float flatMask = smoothstep(0.5 - 0.12 * uSnowCoverage, 0.8, up);
+                            float snSnow = snowBand * flatMask;
+                            col = mix(col, vec3(0.86, 0.9, 0.96) * (0.94 + 0.06 * n2), snSnow);
+
+                            // Road paint, snowy shoulders and wet asphalt in winter.
+                            float snWet = 0.0;
+                            float lat = abs(-wp.x * 0.707106 + wp.z * 0.707106);
+                            float along = wp.x * 0.707106 + wp.z * 0.707106;
+                            if ((lat < 0.72 && wp.y < 0.2 && abs(wp.x) < 7.5 && abs(wp.z) < 7.5) || vMat.z > 0.4) {
+                                vec3 asphalt = vec3(0.18, 0.19, 0.21) * mix(1.0, 0.5, uSnowCoverage);
+                                float dash = step(0.5, fract(along * 0.75));
+                                float isCenter = step(lat, 0.02) * dash;
+                                float isEdge = step(abs(lat - 0.6), 0.025);
+                                vec3 roadCol = mix(asphalt, vec3(0.9, 0.75, 0.1), isCenter);
+                                roadCol = mix(roadCol, vec3(0.85), isEdge);
+                                float edgeSnow = uSnowCoverage * smoothstep(0.5, 0.68, lat + (n2 - 0.5) * 0.14);
+                                roadCol = mix(roadCol, vec3(0.84, 0.88, 0.93), edgeSnow);
+                                float shoulder = (abs(wp.x) < 7.5 && abs(wp.z) < 7.5) ? smoothstep(0.7, 0.72, lat) : (1.0 - smoothstep(0.4, 0.9, vMat.z));
+                                col = mix(roadCol, col, shoulder);
+                                snWet = uSnowCoverage * (1.0 - edgeSnow) * (1.0 - shoulder);
+                                snSnow *= shoulder;
+                            }
+                            diffuseColor.rgb = col;
+                        `,
+                        fragmentRoughness: /* glsl */`
+                            roughnessFactor = mix(roughnessFactor, 0.26, snWet);
+                            roughnessFactor = mix(roughnessFactor, 0.7, snSnow * 0.6);
+                        `
+                    }
+                );
+            }
+            return cachedAlpineTerrainMaterial;
+        }
+
         /* ════════════════════════════════════════════════════════════════════
            TERRAIN — heightfield with baked strata, scree, AO; seasonal coloring
            and snow in the fragment shader.
@@ -381,65 +492,7 @@ function createSafeCanvas(w = 256, h = 256) {
                 geo.setAttribute('aMat', new THREE.BufferAttribute(mats, 3));
                 geo.computeVertexNormals();
 
-                const material = patchMaterial(
-                    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0.02, flatShading: true }),
-                    {
-                        key: 'terrain',
-                        worldPos: true,
-                        vertexPars: 'attribute vec3 aMat; varying vec3 vMat;',
-                        vertexBegin: 'vMat = aMat;',
-                        fragmentPars: 'varying vec3 vMat;',
-                        fragmentColor: /* glsl */`
-                            vec3 wp = vWPos;
-                            vec3 fN = normalize(cross(dFdx(wp), dFdy(wp)) + vec3(0.0, 1e-6, 0.0));
-                            float up = abs(fN.y);
-                            float n1 = sn_fbm(wp.xz * 0.9);
-                            float n2 = sn_noise(wp.xz * 6.5);
-                            float meadow = vMat.x;
-                            vec3 col = diffuseColor.rgb;
-
-                            // Spring: lush saturation. All seasons: meadow tint.
-                            float lum = dot(col, vec3(0.299, 0.587, 0.114));
-                            col = mix(col, mix(vec3(lum), col, 1.0 + 0.55 * uLush) * uMeadowTint, meadow);
-                            // Autumn: dry golden patches.
-                            float dryMask = uDry * meadow * smoothstep(0.42, 0.66, n1 + n2 * 0.15);
-                            col = mix(col, vec3(0.4, 0.27, 0.09) * (0.8 + n2 * 0.4), dryMask * 0.75);
-                            // Winter: frost on the meadow.
-                            col = mix(col, vec3(0.6, 0.66, 0.7), uFrost * meadow * (0.35 + 0.25 * n2));
-
-                            // Snow: height line + noise, only on flat enough faces (steep rock stays bare).
-                            float snowEdge = wp.y + (n1 - 0.5) * 1.1 + (n2 - 0.5) * 0.25;
-                            float snowBand = smoothstep(uSnowLine - 0.2, uSnowLine + 0.3, snowEdge);
-                            float flatMask = smoothstep(0.5 - 0.12 * uSnowCoverage, 0.8, up);
-                            float snSnow = snowBand * flatMask;
-                            col = mix(col, vec3(0.86, 0.9, 0.96) * (0.94 + 0.06 * n2), snSnow);
-
-                            // Road paint, snowy shoulders and wet asphalt in winter.
-                            float snWet = 0.0;
-                            float lat = abs(-wp.x * 0.707106 + wp.z * 0.707106);
-                            float along = wp.x * 0.707106 + wp.z * 0.707106;
-                            if (lat < 0.72 && wp.y < 0.2 && abs(wp.x) < 7.5 && abs(wp.z) < 7.5) {
-                                vec3 asphalt = vec3(0.18, 0.19, 0.21) * mix(1.0, 0.5, uSnowCoverage);
-                                float dash = step(0.5, fract(along * 0.75));
-                                float isCenter = step(lat, 0.02) * dash;
-                                float isEdge = step(abs(lat - 0.6), 0.025);
-                                vec3 roadCol = mix(asphalt, vec3(0.9, 0.75, 0.1), isCenter);
-                                roadCol = mix(roadCol, vec3(0.85), isEdge);
-                                float edgeSnow = uSnowCoverage * smoothstep(0.5, 0.68, lat + (n2 - 0.5) * 0.14);
-                                roadCol = mix(roadCol, vec3(0.84, 0.88, 0.93), edgeSnow);
-                                float shoulder = smoothstep(0.7, 0.72, lat);
-                                col = mix(roadCol, col, shoulder);
-                                snWet = uSnowCoverage * (1.0 - edgeSnow) * (1.0 - shoulder);
-                                snSnow *= shoulder;
-                            }
-                            diffuseColor.rgb = col;
-                        `,
-                        fragmentRoughness: /* glsl */`
-                            roughnessFactor = mix(roughnessFactor, 0.26, snWet);
-                            roughnessFactor = mix(roughnessFactor, 0.7, snSnow * 0.6);
-                        `
-                    }
-                );
+                const material = getSharedTerrainMaterial();
                 this.mesh = new THREE.Mesh(geo, material);
                 this.mesh.castShadow = true;
                 this.mesh.receiveShadow = true;
@@ -2298,79 +2351,317 @@ function createSafeCanvas(w = 256, h = 256) {
 
 
 
+class AlpineChunk {
+    constructor(cx, cz, parentGroup, glowMaterials = [], world = null) {
+        this.cx = cx;
+        this.cz = cz;
+        this.group = new THREE.Group();
+        this.group.name = `AlpineChunk_${cx}_${cz}`;
+        this.glowMaterials = glowMaterials;
+        this.world = world;
+        this.updatables = [];
+
+        if (cx === 0 && cz === 0) {
+            // Genesis diorama tile (0, 0)
+            this.terrain = new Terrain(this.group);
+            this.stream = new Stream(this.group, this.terrain.rockGeometry, this.terrain.rockMaterial);
+            this.updatables.push(this.stream);
+
+            this.bridge = new Bridge(this.group, glowMaterials);
+            this.updatables.push(this.bridge);
+
+            this.chalet = new Chalet(this.group, glowMaterials);
+            this.updatables.push(this.chalet);
+
+            this.windmill = new Windmill(this.group, glowMaterials);
+            this.updatables.push(this.windmill);
+
+            buildRoadDetails(this.group, glowMaterials);
+
+            this.campfire = new Campfire(this.group, glowMaterials);
+            this.updatables.push(this.campfire);
+
+            this.vegetation = new Vegetation(this.group);
+
+            this.chimneySmoke = new ChimneySmoke(this.group, this.chalet?.chimneyTop);
+            this.updatables.push(this.chimneySmoke);
+
+            this.birds = new BirdFlock(this.group);
+            this.updatables.push(this.birds);
+        } else {
+            // Procedural mountain tile
+            this.buildSurface();
+            this.buildScenery();
+        }
+
+        parentGroup.add(this.group);
+    }
+
+    buildSurface() {
+        const SEG = 30;
+        const CHUNK_SIZE = 16.0;
+        const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, SEG, SEG);
+        geo.rotateX(-Math.PI / 2);
+        const ox = this.cx * CHUNK_SIZE;
+        const oz = this.cz * CHUNK_SIZE;
+        geo.translate(ox + CHUNK_SIZE / 2, 0, oz + CHUNK_SIZE / 2);
+
+        const pos = geo.attributes.position;
+        const heights = new Float32Array(pos.count);
+        for (let i = 0; i < pos.count; i++) {
+            const h = getContinuousAlpineHeight(pos.getX(i), pos.getZ(i), this.world);
+            heights[i] = h;
+            pos.setY(i, h);
+        }
+
+        const W = SEG + 1;
+        const hAt = (ix, iz) => heights[clamp(iz, 0, SEG) * W + clamp(ix, 0, SEG)];
+        const colors = new Float32Array(pos.count * 3);
+        const mats = new Float32Array(pos.count * 3);
+        const cMeadowA = new THREE.Color(0x3f6b2b), cMeadowB = new THREE.Color(0x679546);
+        const cRockA = new THREE.Color(0x57534f), cRockB = new THREE.Color(0x8a8279), cRockHi = new THREE.Color(0x9c9a99);
+        const cScreeA = new THREE.Color(0x6f685b), cScreeB = new THREE.Color(0x938b7d);
+        const cDirt = new THREE.Color(0x59463c);
+        const col = new THREE.Color(), tmp = new THREE.Color();
+        const step = CHUNK_SIZE / SEG;
+
+        for (let iz = 0; iz <= SEG; iz++) {
+            for (let ix = 0; ix <= SEG; ix++) {
+                const i = iz * W + ix;
+                const x = pos.getX(i), z = pos.getZ(i), h = heights[i];
+                const gx = (hAt(ix + 1, iz) - hAt(ix - 1, iz)) / (2 * step);
+                const gz = (hAt(ix, iz + 1) - hAt(ix, iz - 1)) / (2 * step);
+                const slope = Math.hypot(gx, gz);
+                const n = valueNoise(x * 0.6, z * 0.6), n2 = valueNoise(x * 2.3, z * 2.3);
+
+                const rock = Math.max(smoothstep(h, 1.6, 2.7), smoothstep(slope, 0.9, 1.6));
+                const scree = (1 - rock) * smoothstep(h, 0.7, 1.4);
+
+                let isNearRoad = false;
+                if (this.world && this.world.edges && this.world.byId) {
+                    for (const e of this.world.edges) {
+                        const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                        if (!a || !b) continue;
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const l2 = dx * dx + dz * dz;
+                        if (!l2) continue;
+                        const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
+                        if (Math.hypot(x - (a.x + t * dx), z - (a.z + t * dz)) < ROAD_WIDTH / 2 + 0.35) {
+                            isNearRoad = true;
+                            break;
+                        }
+                    }
+                }
+                const dirt = isNearRoad ? 1 : 0;
+
+                col.lerpColors(cMeadowA, cMeadowB, clamp((h - BASE_HEIGHT) * 0.7 + n * 0.35, 0, 1));
+                const band = 0.5 + 0.5 * Math.sin(h * 7.5 + n2 * 2.6 + x * 0.3);
+                tmp.lerpColors(cRockA, cRockB, band * 0.8 + n2 * 0.2);
+                tmp.lerp(cRockHi, smoothstep(h, 3.4, 6.0) * 0.7);
+                col.lerp(tmp, rock);
+                tmp.lerpColors(cScreeA, cScreeB, n2);
+                col.lerp(tmp, scree * 0.85);
+                if (dirt) col.lerp(cDirt, 1 - rock);
+
+                colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+                const meadow = clamp(1 - rock - scree * 0.8 - dirt, 0, 1);
+                mats[i * 3] = meadow; mats[i * 3 + 1] = rock; mats[i * 3 + 2] = dirt;
+            }
+        }
+
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geo.setAttribute('aMat', new THREE.BufferAttribute(mats, 3));
+        geo.computeVertexNormals();
+
+        const mat = getSharedTerrainMaterial();
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        this.group.add(mesh);
+        this.surfaceMesh = mesh;
+    }
+
+    buildScenery() {
+        const CHUNK_SIZE = 16.0;
+        const ox = this.cx * CHUNK_SIZE;
+        const oz = this.cz * CHUNK_SIZE;
+
+        const batch = new StaticBatch();
+        const trunkMat = stdMat(0x4a2f20, 0.9);
+        const needleMat = stdMat(0x1f4a2c, 0.85);
+        const birchTrunk = stdMat(0xd8d4cd, 0.85);
+        const birchLeaves = stdMat(0x6b8e23, 0.85);
+        const stoneMat = stdMat(0x6e6862, 0.9);
+        const woodRail = stdMat(0x6b4f3a, 0.9);
+
+        // Instanced vegetation
+        for (let k = 0; k < 12; k++) {
+            const rx = ox + 1.5 + (hash(this.cx * 73 + k * 17, this.cz * 41) % 1) * (CHUNK_SIZE - 3);
+            const rz = oz + 1.5 + (hash(this.cz * 59 + k * 23, this.cx * 31) % 1) * (CHUNK_SIZE - 3);
+            const h = getContinuousAlpineHeight(rx, rz, this.world);
+            if (h > 3.2 || h < 0.2) continue;
+
+            let nearRoad = false;
+            if (this.world && this.world.edges && this.world.byId) {
+                for (const e of this.world.edges) {
+                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
+                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 1.1) {
+                        nearRoad = true;
+                        break;
+                    }
+                }
+            }
+            if (nearRoad) continue;
+
+            if (k % 3 === 0) {
+                batch.add(new THREE.CylinderGeometry(0.06, 0.1, 1.2, 5), birchTrunk, rx, h + 0.6, rz);
+                batch.add(new THREE.DodecahedronGeometry(0.55), birchLeaves, rx, h + 1.4, rz);
+            } else {
+                batch.add(new THREE.CylinderGeometry(0.07, 0.12, 0.8, 5), trunkMat, rx, h + 0.4, rz);
+                batch.add(new THREE.ConeGeometry(0.65, 0.9, 6), needleMat, rx, h + 1.0, rz);
+                batch.add(new THREE.ConeGeometry(0.48, 0.75, 6), needleMat, rx, h + 1.5, rz);
+                batch.add(new THREE.ConeGeometry(0.32, 0.6, 6), needleMat, rx, h + 1.95, rz);
+            }
+        }
+
+        // Road guardrails
+        if (this.world && this.world.edges && this.world.byId) {
+            for (const e of this.world.edges) {
+                const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                if (!a || !b) continue;
+                const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
+                if (midX < ox - 3 || midX > ox + CHUNK_SIZE + 3 || midZ < oz - 3 || midZ > oz + CHUNK_SIZE + 3) continue;
+
+                const hEdge = heading(a, b);
+                const len = dist(a, b);
+                for (let stepAlong = 1.0; stepAlong < len - 0.5; stepAlong += 2.0) {
+                    const pAlong = move(a, hEdge, stepAlong);
+                    for (const side of [-1, 1]) {
+                        const gp = move(pAlong, hEdge + Math.PI / 2, side * (ROAD_WIDTH / 2 + 0.18));
+                        if (Math.abs(gp.x) <= 7.5 && Math.abs(gp.z) <= 7.5) continue;
+                        const py = getContinuousAlpineHeight(gp.x, gp.z, this.world);
+                        batch.add(new THREE.CylinderGeometry(0.035, 0.035, 0.32, 5), woodRail, gp.x, py + 0.16, gp.z);
+                        batch.add(new THREE.BoxGeometry(0.05, 0.08, 1.9), woodRail, gp.x, py + 0.22, gp.z, 0, Math.PI - hEdge, 0);
+                    }
+                }
+            }
+        }
+
+        // Objects in chunk
+        if (this.world && this.world.objects) {
+            const objs = this.world.objects.filter(o => o.x >= ox && o.x < ox + CHUNK_SIZE && o.z >= oz && o.z < oz + CHUNK_SIZE);
+            for (const o of objs) {
+                if (o.type === "alpine_roundabout_center") {
+                    const fy = getContinuousAlpineHeight(o.x, o.z, this.world);
+                    batch.add(new THREE.CylinderGeometry(0.9, 1.1, 0.35, 12), stoneMat, o.x, fy + 0.17, o.z);
+                    batch.add(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 8), stoneMat, o.x, fy + 0.6, o.z);
+                    batch.add(new THREE.ConeGeometry(0.55, 1.1, 6), needleMat, o.x, fy + 1.2, o.z);
+                } else if (o.type === "alpine_fork_gantry") {
+                    const gy = getContinuousAlpineHeight(o.x, o.z, this.world);
+                    const gh = o.heading || 0;
+                    for (const s of [-1.2, 1.2]) {
+                        const postP = move({ x: o.x, z: o.z }, gh + Math.PI / 2, s);
+                        batch.add(new THREE.CylinderGeometry(0.08, 0.08, 1.5, 6), woodRail, postP.x, gy + 0.75, postP.z);
+                    }
+                    batch.box(woodRail, 2.6, 0.15, 0.18, o.x, gy + 1.45, o.z, 0, -gh, 0);
+                }
+            }
+        }
+
+        batch.build(this.group);
+    }
+
+    dispose() {
+        if (this.surfaceMesh) {
+            this.surfaceMesh.geometry.dispose();
+        }
+        this.group.traverse(o => {
+            if (o.isMesh) {
+                o.geometry?.dispose();
+            }
+        });
+        this.group.parent?.remove(this.group);
+    }
+}
+
 export class AlpinePassage {
-    constructor(scene, glowMaterials = [], spawnDioramaTraffic = true) {
+    constructor(scene, glowMaterials = [], spawnDioramaTraffic = true, world = null) {
         this.scene = scene;
         this.group = new THREE.Group();
         this.group.name = 'AlpinePassageDiorama';
         this.glowMaterials = glowMaterials;
-        this.updatables = [];
+        this.world = world;
+        this.chunks = new Map();
 
-        // 1. Terrain & Cliffs
-        this.terrain = new Terrain(this.group);
-
-        // 2. Stream, waterfall cascade & mist
-        this.stream = new Stream(this.group, this.terrain.rockGeometry, this.terrain.rockMaterial);
-        this.updatables.push(this.stream);
-
-        // 3. Stone Bridge
-        this.bridge = new Bridge(this.group, glowMaterials);
-        this.updatables.push(this.bridge);
-
-        // 4. Alpine Architecture: Chalet & Windmill
-        this.chalet = new Chalet(this.group, glowMaterials);
-        this.updatables.push(this.chalet);
-
-        this.windmill = new Windmill(this.group, glowMaterials);
-        this.updatables.push(this.windmill);
-
-        // 5. Road furniture (guardrails, reflectors, ALPINE PASS sign)
-        buildRoadDetails(this.group, glowMaterials);
-
-        // 6. Campfire lookout
-        this.campfire = new Campfire(this.group, glowMaterials);
-        this.updatables.push(this.campfire);
-
-        // 7. Vegetation (Pines, Birches, Spruce, instanced grass)
-        this.vegetation = new Vegetation(this.group);
-
-        // 8. Chimney Smoke & Birds
-        this.chimneySmoke = new ChimneySmoke(this.group, this.chalet?.chimneyTop);
-        this.updatables.push(this.chimneySmoke);
-
-        this.birds = new BirdFlock(this.group);
-        this.updatables.push(this.birds);
-
-        // 9. Traffic (Micro diorama cars)
-        if (spawnDioramaTraffic) {
-            this.traffic = new Traffic(this.group);
-            this.updatables.push(this.traffic);
-        }
+        // Genesis chunk (0, 0) is rendered by this.dioramaGroup
 
         scene.add(this.group);
     }
 
-    update(dt, controller) {
+    ensureChunk(cx, cz) {
+        if (cx === 0 && cz === 0) return null; // Handled by dioramaGroup
+        const key = `${cx},${cz}`;
+        if (!this.chunks.has(key)) {
+            const chunk = new AlpineChunk(cx, cz, this.group, this.glowMaterials, this.world);
+            this.chunks.set(key, chunk);
+        }
+        return this.chunks.get(key);
+    }
+
+    update(dt, controller, playerPos = null, world = null) {
         if (!controller) return;
+        if (world) this.world = world;
         this.time = (this.time || 0) + dt;
-        const S = controller.season, T = controller.time;
-        for (const u of this.updatables) {
-            try {
-                if (u === this.stream) u.update(dt, U.uFlowTime.value);
-                else if (u === this.bridge) u.update(T);
-                else if (u === this.chalet) u.update(T);
-                else if (u === this.windmill) u.update(dt, U.uWindTime.value);
-                else if (u === this.campfire) u.update(this.time || 0, (S.fire || 0) * (T.evening || 0));
-                else if (u === this.chimneySmoke) u.update(dt, S.smoke || 0, T.night || 0);
-                else if (u === this.birds) u.update(dt, this.time || 0, S.birds || 0);
-                else if (u === this.traffic) u.update(dt, T.carLights || 0);
-            } catch (e) {
-                // Ignore individual prop tick error
+
+        // Dynamic Chunk Streaming around player
+        if (playerPos) {
+            const CHUNK_SIZE = 16.0;
+            const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
+            const pcz = Math.floor(playerPos.z / CHUNK_SIZE);
+
+            // Ensure 3x3 window around player
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    this.ensureChunk(pcx + dx, pcz + dz);
+                }
+            }
+
+            // Dispose distant chunks (keeping genesis diorama 0,0)
+            for (const [key, chunk] of this.chunks) {
+                if (chunk.cx === 0 && chunk.cz === 0) continue;
+                if (Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz)) > 2) {
+                    chunk.dispose();
+                    this.chunks.delete(key);
+                }
+            }
+        }
+
+        // Update updatables on all active chunks
+        for (const chunk of this.chunks.values()) {
+            for (const u of chunk.updatables) {
+                try {
+                    if (u === chunk.stream) u.update(dt, U.uFlowTime.value);
+                    else if (u === chunk.bridge) u.update(controller.time);
+                    else if (u === chunk.chalet) u.update(controller.time);
+                    else if (u === chunk.windmill) u.update(dt, U.uWindTime.value);
+                    else if (u === chunk.campfire) u.update(this.time || 0, (controller.season.fire || 0) * (controller.time.evening || 0));
+                    else if (u === chunk.chimneySmoke) u.update(dt, controller.season.smoke || 0, controller.time.night || 0);
+                    else if (u === chunk.birds) u.update(dt, this.time || 0, controller.season.birds || 0);
+                } catch (e) {}
             }
         }
     }
 
     dispose() {
+        for (const chunk of this.chunks.values()) {
+            chunk.dispose();
+        }
+        this.chunks.clear();
         this.scene.remove(this.group);
     }
 }
@@ -2379,6 +2670,6 @@ export {
     WORLD_SIZE, HALF_WORLD, ROAD_WIDTH, ROAD_DIR_X, ROAD_DIR_Z,
     BRIDGE_X, BRIDGE_Z, BRIDGE_ALONG, PEAK_X, PEAK_Z, HUT_X, HUT_Z,
     WINDMILL_X, WINDMILL_Z, CAMP_X, CAMP_Z, CAMERA_PRESETS,
-    getTerrainHeight, distanceToStream, getLateralRoadDist,
-    Terrain, Stream, Bridge, Vegetation, Chalet, Windmill, Campfire, BirdFlock, ChimneySmoke, Traffic
+    getTerrainHeight, getContinuousAlpineHeight, distanceToStream, getLateralRoadDist,
+    Terrain, Stream, Bridge, Vegetation, Chalet, Windmill, Campfire, BirdFlock, ChimneySmoke, Traffic, AlpineChunk
 };

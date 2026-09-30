@@ -33,6 +33,7 @@ export class GameTrafficManager {
 
   initSwarm() {
     this.agents = [];
+    if (this.sim.world.type === "alpine") return;
     const player = this.sim.player;
     // Spawn 3 game-theoretic surrounding NPCs around player:
     // 1. Right-front aggressive car (potential cut-in agent)

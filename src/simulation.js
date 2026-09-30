@@ -4,6 +4,7 @@ import {
   makeForkRoute,
   shortestPath,
   signalState,
+  extendAlpineWorld,
 } from "./world.js";
 import {
   clamp,
@@ -120,17 +121,52 @@ export class Simulation {
       s: 0,
       stops: {},
       intersectionMemory: null,
-      width: type === "alpine" ? 0.44 : 1.9,
-      depth: type === "alpine" ? 1.0 : 4.75,
+      width: type === "alpine" ? 0.36 : 1.9,
+      depth: type === "alpine" ? 0.90 : 4.75,
     };
     this.traffic = [];
     for (let i = 0; i < this.world.theme.traffic; i++) this.spawnTraffic(i);
     this.pedestrians = [];
-    for (
-      let i = 0;
-      i < (type === "highway" || type === "alpine" ? 0 : 14 + (type === "city" ? 12 : 0));
-      i++
-    ) {
+    const pedCount = type === "highway" ? 0 : (type === "alpine" ? 10 : 14 + (type === "city" ? 12 : 0));
+    for (let i = 0; i < pedCount; i++) {
+      if (type === "alpine") {
+        const validEdges = this.world.edges.filter(e => e.width > 0 && e.a !== "alp-0" && e.b !== "alp-0");
+        const edge = choose(this.r, validEdges.length ? validEdges : this.world.edges) || this.world.edges[0];
+        const a = this.world.byId[edge.a], b = this.world.byId[edge.b];
+        const hEdge = heading(a, b);
+        const len = dist(a, b);
+        const isCrossing = i % 3 === 0;
+        const side = this.r() < 0.5 ? -1 : 1;
+        const offsetDist = isCrossing ? 0 : 0.95 * side;
+        const pathStart = move(move(a, hEdge, 0.4), hEdge + Math.PI / 2, offsetDist);
+        const progress = isCrossing ? 0 : this.r() * Math.max(0.4, len - 0.8);
+        const position = isCrossing
+          ? move(move(a, hEdge, len * 0.5), hEdge + Math.PI / 2, -1.2)
+          : move(pathStart, hEdge, progress);
+        const walkHeading = isCrossing ? (hEdge + Math.PI / 2) : hEdge;
+        this.pedestrians.push({
+          id: `pedestrian-${i}`,
+          type: "pedestrian",
+          subtype: isCrossing ? "hiker_cross" : (i % 2 === 0 ? "hiker" : "villager"),
+          nodeId: a.id,
+          x: position.x,
+          z: position.z,
+          progress,
+          walkPath: {
+            start: isCrossing ? position : pathStart,
+            heading: walkHeading,
+            length: isCrossing ? 2.4 : len,
+          },
+          direction: this.r() > 0.5 ? 1 : -1,
+          crossing: isCrossing,
+          walking: true,
+          speed: 0.35 + this.r() * 0.25,
+          width: 0.2,
+          depth: 0.2,
+          height: 0.5,
+        });
+        continue;
+      }
       const node = choose(this.r, this.world.nodes),
         crossing = i % 3 === 0 && node.control === "signal";
       const other = this.world.byId[choose(this.r, node.neighbors)];
@@ -169,7 +205,8 @@ export class Simulation {
     }
     this.gameManager = new GameTrafficManager(this);
   }
-  spawnTraffic(i, distant = false) {
+  spawnTraffic(i, distant = false, attempt = 0) {
+    if (attempt > 10) return;
     const highway = this.world.type === "highway";
     const alpine = this.world.type === "alpine";
     const nodes = highway
@@ -179,8 +216,24 @@ export class Simulation {
     if (highway) {
       ids = (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id);
     } else if (alpine) {
-      const mainNodes = ["alp-0", "alp-1", "alp-2", "alp-3", "alp-4", "alp-5", "alp-6"];
-      ids = i % 2 === 0 ? mainNodes : [...mainNodes].reverse();
+      if (i === 1) {
+        ids = ["alp-spur-windmill", "alp-spur-campfire", "alp-spur-chalet", "alp-5"];
+      } else if (i === 2) {
+        ids = ["alp-3", "alp-4", "alp-5", "alp-6"];
+      } else {
+        const nonStartNodes = this.world.nodes.filter(n => n.id !== "alp-0");
+        const startNode = choose(this.r, nonStartNodes.length ? nonStartNodes : this.world.nodes);
+        const candidates = this.world.nodes.filter(n => n.id !== startNode.id && n.id !== "alp-0" && dist(n, startNode) > 3.0);
+        const endNode = candidates.length ? choose(this.r, candidates) : startNode;
+        try {
+          ids = shortestPath(this.world, startNode.id, endNode.id);
+        } catch {
+          ids = [startNode.id];
+        }
+        if (ids.length < 2) {
+          ids = ["alp-2", "alp-3", "alp-4", "alp-5", "alp-6"];
+        }
+      }
     } else {
       let a = choose(this.r, nodes),
         b = choose(
@@ -190,7 +243,7 @@ export class Simulation {
       if (!b) b = choose(this.r, nodes.filter((n) => n !== a)) || a;
       ids = shortestPath(this.world, a.id, b.id);
     }
-    if (ids.length < 3) return this.spawnTraffic(i, distant);
+    if (ids.length < 2) return this.spawnTraffic(i, distant, attempt + 1);
     const route = makeRoute(
         this.world,
         ids,
@@ -199,13 +252,57 @@ export class Simulation {
       s = this.r() * route.length,
       p = pointAt(route.points, s),
       next = pointAt(route.points, s + 1);
-    if (dist(p, this.player) < (distant ? (alpine ? 10 : 600) : (alpine ? 2 : 15)))
-      return this.spawnTraffic(i, distant);
+    const minDist = distant ? (alpine ? 6.0 : 600) : (alpine ? 4.5 : 15);
+    if (dist(p, this.player) < minDist)
+      return this.spawnTraffic(i, distant, attempt + 1);
     const existing = this.traffic.find((v) => v.id === `vehicle-${i}`);
-    if (this.traffic.some((v) => v !== existing && dist(v, p) < (alpine ? 1.8 : 10))) return;
+    if (this.traffic.some((v) => v !== existing && dist(v, p) < (alpine ? 1.8 : 10)))
+      return this.spawnTraffic(i, distant, attempt + 1);
+
+    let vType = "car";
+    let subtype = "sedan";
+    let vWidth = 0.44;
+    let vDepth = 1.0;
+
+    if (alpine) {
+      const pick = i % 5;
+      if (pick === 0) {
+        subtype = "sedan";
+        vType = "car";
+        vWidth = 0.36;
+        vDepth = 0.90;
+      } else if (pick === 1) {
+        subtype = "suv";
+        vType = "car";
+        vWidth = 0.40;
+        vDepth = 0.95;
+      } else if (pick === 2) {
+        subtype = "truck";
+        vType = "truck";
+        vWidth = 0.42;
+        vDepth = 1.6;
+      } else if (pick === 3) {
+        subtype = "bus";
+        vType = "car";
+        vWidth = 0.40;
+        vDepth = 1.6;
+      } else {
+        subtype = "motorcycle";
+        vType = "motorcycle";
+        vWidth = 0.20;
+        vDepth = 0.55;
+      }
+    } else {
+      vType = i % 5 === 0 ? "motorcycle" : "car";
+      subtype = i % 5 === 0 ? "motorcycle" : "sedan";
+      vWidth = i % 5 === 0 ? 0.8 : 1.9;
+      vDepth = i % 5 === 0 ? 2.3 : 4.2;
+    }
+
     const v = {
       id: `vehicle-${i}`,
-      type: alpine ? "car" : (i % 5 === 0 ? "motorcycle" : "car"),
+      type: vType,
+      subtype,
       x: p.x,
       z: p.z,
       heading: heading(p, next),
@@ -213,8 +310,8 @@ export class Simulation {
       s,
       route,
       stops: {},
-      width: alpine ? 0.44 : (i % 5 === 0 ? 0.8 : 1.9),
-      depth: alpine ? 1.0 : (i % 5 === 0 ? 2.3 : 4.2),
+      width: vWidth,
+      depth: vDepth,
       color: choose(this.r, [
         "#de8e69",
         "#e9be57",
@@ -228,10 +325,33 @@ export class Simulation {
     else this.traffic.push(v);
   }
   continueTraffic(v) {
-    if (this.world.type === "highway" || this.world.type === "alpine") return;
+    if (this.world.type === "highway") return;
+    const ids = v.route.ids.slice(-2);
+    if (ids.length < 2) return;
+    const lastNode = this.world.byId[ids.at(-1)];
+    if (!lastNode) return;
+    if (this.world.type === "alpine") {
+      if (lastNode.id === "alp-0") {
+        this.spawnTraffic(Number(v.id.split("-")[1]), true);
+        return;
+      }
+      const forward = lastNode.neighbors.filter((id) => id !== ids.at(-2));
+      const nextId = choose(this.r, forward.length ? forward : lastNode.neighbors);
+      if (!nextId) return;
+      ids.push(nextId);
+      try {
+        const route = makeRoute(this.world, ids);
+        const near = nearestOnPath(v, route.points);
+        if (near.distance <= 1.0) {
+          v.route = route;
+          v.s = near.s;
+          v.stops = {};
+        }
+      } catch {}
+      return;
+    }
     // Rebuild from the current final road segment, before its junction enters
     // braking range. The shared segment preserves lane position and heading.
-    const ids = v.route.ids.slice(-2);
     for (let i = 0; i < 5; i++) {
       const node = this.world.byId[ids.at(-1)];
       const forward = node.neighbors.filter((id) => id !== ids.at(-2));
@@ -481,9 +601,10 @@ export class Simulation {
     // the real-time guard still checks whichever maneuver Jev actually selects.
     const planningMax = max;
     const conflict =
-      v === this.player
+      (v === this.player || this.world.type === "alpine")
         ? predictTrafficConflict(v, [
-            ...this.traffic,
+            ...(v === this.player ? [] : [this.player]),
+            ...this.traffic.filter((o) => o.id !== v.id),
             ...this.pedestrians,
             ...(this.gameManager?.agents || []),
           ])
@@ -582,25 +703,35 @@ export class Simulation {
     }
     updateCourtesy(this);
     for (const v of this.traffic) {
-      if (v.route.length - v.s < 75) this.continueTraffic(v);
-      const rule = this.rule(v, true);
-      let target = this.speedEnvelope(v).max;
-      const next = pointAt(v.route.points, v.s + 9),
+      if (v.route.length - v.s < (this.world.type === "alpine" ? 8 : 75)) this.continueTraffic(v);
+      const env = this.speedEnvelope(v);
+      const rule = env.rule;
+      const lead = env.lead;
+      let target = env.max;
+      const lookahead = this.world.type === "alpine" ? 1.5 : 9;
+      const next = pointAt(v.route.points, v.s + lookahead),
         h = heading(v, next);
       if (v.s < v.route.length - 1 && Math.abs(angle(h - v.heading)) > 0.2)
-        target = Math.min(target, 6.5);
-      v.speed += clamp(target - v.speed, -7 * dt, 2.8 * dt);
+        target = Math.min(target, this.world.type === "alpine" ? 2.5 : 6.5);
+      const maxBrake = (target === 0 || target < v.speed * 0.4) ? -12 : -7;
+      v.speed += clamp(target - v.speed, maxBrake * dt, 2.8 * dt);
       if (
         rule.mustStop &&
         rule.distance >= 0 &&
         v.speed * dt > Math.max(0, rule.distance - v.depth / 2 - 0.2)
       )
         v.speed = Math.max(0, rule.distance - v.depth / 2 - 0.2) / dt;
+      if (
+        lead &&
+        lead.gap >= 0 &&
+        v.speed * dt > Math.max(0, lead.gap - (this.world.type === "alpine" ? 0.35 : 0.8))
+      )
+        v.speed = Math.max(0, lead.gap - (this.world.type === "alpine" ? 0.35 : 0.8)) / dt;
       v.s += v.speed * dt;
       if (v.s >= v.route.length - 1) {
-        // Interstate vehicles continue beyond the map and recycle only after
+        // Interstate/Alpine vehicles continue beyond the view and recycle only after
         // leaving the view. No visible route-end teleport.
-        if (dist(v, this.player) > 1300)
+        if (dist(v, this.player) > (this.world.type === "alpine" ? 45 : 1300))
           this.spawnTraffic(Number(v.id.split("-")[1]), true);
         else {
           v.x += Math.sin(v.heading) * v.speed * dt;
@@ -786,7 +917,8 @@ export class Simulation {
     }
     if (this.endlessCruising) {
       const remainingDist = Math.max(0, v.route.length - v.s);
-      if (remainingDist < 35 && this.time - this.lastLegAdvance > 4) {
+      const threshold = this.world.type === "alpine" ? 12 : 35;
+      if (remainingDist < threshold && this.time - this.lastLegAdvance > 2.5) {
         this.appendNextLeg();
       }
     } else if (
@@ -1673,16 +1805,47 @@ export class Simulation {
       this.complete = false;
       this.event("∞ 无尽巡航已激活：自车将连续跨片区接力巡航，永不停滞！", "success");
       const remainingDist = Math.max(0, this.player.route.length - this.player.s);
-      if (remainingDist < 35) this.appendNextLeg();
+      const threshold = this.world.type === "alpine" ? 12 : 35;
+      if (remainingDist < threshold) this.appendNextLeg();
     } else {
       this.event("定点导航已激活：自车将在当前航段终点平稳制动停靠", "info");
     }
     return this.endlessCruising;
   }
   appendNextLeg() {
-    if (this.time - this.lastLegAdvance < 4) return;
+    if (this.time - this.lastLegAdvance < 2.5) return;
     this.lastLegAdvance = this.time;
     const v = this.player;
+
+    if (this.world.type === "alpine") {
+      const curDestId = this.destinationApproach?.[1] || this.world.destination;
+      const curDestNode = this.world.byId[curDestId];
+      if (!curDestNode) return;
+
+      const leg = extendAlpineWorld(this.world, curDestNode, this.r, this.forkBranch || "left");
+      if (leg && leg.pathIds && leg.pathIds.length >= 2) {
+        try {
+          const fullIds = [...v.route.ids, ...leg.pathIds.slice(1)];
+          const fullRoute = makeRoute(this.world, fullIds);
+          if (fullRoute && fullRoute.points.length > 1) {
+            v.route = this.world.route = fullRoute;
+            this.world.destination = leg.destinationId;
+            this.destinationApproach = leg.pathIds.slice(-2);
+            this.destinationPoint = { ...fullRoute.points.at(-1) };
+            this.routeVersion++;
+            this.stageLeg = (this.stageLeg || 1) + 1;
+            this.event(
+              `∞ 无尽山口：打卡第 ${this.stageLeg - 1} 赛段！已无缝拓展第 ${this.stageLeg} 赛段 ➔ [${leg.name}]`,
+              "success",
+            );
+          }
+        } catch (e) {
+          console.warn("Failed to append infinite alpine leg:", e);
+        }
+      }
+      return;
+    }
+
     const curDestId = this.destinationApproach?.[1] || this.world.destination;
     const curDestNode = this.world.byId[curDestId];
     if (!curDestNode) return;

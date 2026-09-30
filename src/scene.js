@@ -16,7 +16,13 @@ import { CameraInput } from "./camera-input.js";
 import { SceneryAssets } from "./scenery-assets.js";
 import { Vegetation } from "./vegetation.js";
 import { loadHeroCar, updateHeroWheels } from "./model-assets.js";
-import { detailedCar, detailedHeavyTruck } from "./vehicle-model.js";
+import {
+  detailedCar,
+  detailedHeavyTruck,
+  detailedAlpineSUV,
+  detailedAlpineLoggingTruck,
+  detailedAlpineBus,
+} from "./vehicle-model.js";
 import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { assetManager, assetsReady } from "./asset-loading.js";
 import { renderProfile } from "./render-profile.js";
@@ -30,7 +36,7 @@ import {
   buildCityRoadNetwork,
   buildHighwayRoadNetwork,
 } from "./road-renderer.js";
-import { AlpinePassage } from "./alpine-world.js";
+import { AlpinePassage, getContinuousAlpineHeight } from "./alpine-world.js";
 let daylight;
 function daylightEnvironment() {
   return (daylight ||= new HDRLoader(assetManager)
@@ -1213,7 +1219,7 @@ export class DriveScene {
     this.people = new Map();
     this.gameVehicles = new Map();
     for (const v of this.sim.traffic) {
-      const m = carModel(v.color, v.type === "motorcycle");
+      const m = this.createVehicleMesh(v);
       this.vehicles.set(v.id, m);
       this.scene.add(m);
     }
@@ -1386,8 +1392,18 @@ export class DriveScene {
   buildHighway(group, world) {
     buildHighwayRoadNetwork(this.scene, group, world, this.glowMaterials);
   }
+  createVehicleMesh(v) {
+    if (this.sim.world.type === "alpine") {
+      if (v.subtype === "suv") return detailedAlpineSUV(v.color);
+      if (v.subtype === "truck") return detailedAlpineLoggingTruck(v.color);
+      if (v.subtype === "bus") return detailedAlpineBus(v.color);
+      if (v.subtype === "motorcycle") return detailedCar(v.color, true);
+      return detailedCar(v.color, false);
+    }
+    return carModel(v.color, v.type === "motorcycle");
+  }
   buildAlpine(group, world) {
-    this.alpinePassage = new AlpinePassage(group, this.glowMaterials, false);
+    this.alpinePassage = new AlpinePassage(group, this.glowMaterials, false, world);
     this.alpinePassage.group.scale.set(1, 1, 1);
     this.alpinePassage.group.position.set(0, 0, 0);
   }
@@ -1412,19 +1428,24 @@ export class DriveScene {
     this.player.rotation.y = -v.heading;
     if (this.sim.world.type === "alpine") {
       this.player.scale.set(0.24, 0.24, 0.24);
+      const hCenter = getContinuousAlpineHeight(v.x, v.z, this.sim.world);
       const along = v.x * 0.707106 + v.z * 0.707106;
       const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
       const smooth = (x, min, max) => {
         const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
         return t * t * (3 - 2 * t);
       };
-      const roadH = 0.03 + (1 - smooth(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
-      this.player.position.y = roadH;
+      const bridgeBoost = (Math.abs(v.x) <= 7.5 && Math.abs(v.z) <= 7.5)
+        ? (1 - smooth(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
+        : 0;
+      this.player.position.y = Math.max(hCenter, 0.03) + bridgeBoost;
 
-      const forwardAlong = along + 0.24;
-      const rearAlong = along - 0.24;
-      const hFront = 0.03 + (1 - smooth(Math.abs(forwardAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
-      const hRear = 0.03 + (1 - smooth(Math.abs(rearAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
+      const fx = v.x + Math.sin(v.heading) * 0.24;
+      const fz = v.z - Math.cos(v.heading) * 0.24;
+      const rx = v.x - Math.sin(v.heading) * 0.24;
+      const rz = v.z + Math.cos(v.heading) * 0.24;
+      const hFront = getContinuousAlpineHeight(fx, fz, this.sim.world);
+      const hRear = getContinuousAlpineHeight(rx, rz, this.sim.world);
       this.player.rotation.x = Math.atan2(hFront - hRear, 0.48);
     } else {
       this.player.scale.set(1, 1, 1);
@@ -1446,20 +1467,38 @@ export class DriveScene {
         mesh.visible = !insideCar;
     });
     for (const p of this.sim.traffic) {
-      const m = this.vehicles.get(p.id);
+      let m = this.vehicles.get(p.id);
+      if (!m) {
+        m = this.createVehicleMesh(p);
+        this.vehicles.set(p.id, m);
+        this.scene.add(m);
+      }
       if (m) {
         let py = 0;
         if (this.sim.world.type === "alpine") {
           m.scale.set(0.24, 0.24, 0.24);
+          const hCenter = getContinuousAlpineHeight(p.x, p.z, this.sim.world);
           const pAlong = p.x * 0.707106 + p.z * 0.707106;
           const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
           const smooth = (x, min, max) => {
             const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
             return t * t * (3 - 2 * t);
           };
-          py = 0.03 + (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065;
+          const bridgeBoost = (Math.abs(p.x) <= 7.5 && Math.abs(p.z) <= 7.5)
+            ? (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
+            : 0;
+          py = Math.max(hCenter, 0.03) + bridgeBoost;
+
+          const fx = p.x + Math.sin(p.heading) * 0.2;
+          const fz = p.z - Math.cos(p.heading) * 0.2;
+          const rx = p.x - Math.sin(p.heading) * 0.2;
+          const rz = p.z + Math.cos(p.heading) * 0.2;
+          const hFront = getContinuousAlpineHeight(fx, fz, this.sim.world);
+          const hRear = getContinuousAlpineHeight(rx, rz, this.sim.world);
+          m.rotation.x = Math.atan2(hFront - hRear, 0.4);
         } else {
           m.scale.set(1, 1, 1);
+          m.rotation.x = 0;
         }
         m.position.set(p.x, py, p.z);
         m.rotation.y = -p.heading;
@@ -1714,11 +1753,14 @@ export class DriveScene {
         this.scene.add(m);
       }
       if (m) {
-        m.position.set(
-          p.x,
-          p.walking ? Math.sin(this.sim.time * 8) * 0.035 : 0,
-          p.z,
-        );
+        let py = p.walking ? Math.sin(this.sim.time * 8) * 0.035 : 0;
+        if (this.sim.world.type === "alpine") {
+          m.scale.set(0.24, 0.24, 0.24);
+          py = getContinuousAlpineHeight(p.x, p.z, this.sim.world) + (p.walking ? Math.sin(this.sim.time * 8) * 0.015 : 0);
+        } else {
+          m.scale.set(1, 1, 1);
+        }
+        m.position.set(p.x, py, p.z);
         m.rotation.y = -(p.heading || 0);
         const stride = p.walking
           ? Math.sin(
@@ -1897,7 +1939,7 @@ export class DriveScene {
       this.worldActionModel.update(this.sim, dt);
     }
     if (this.alpinePassage) {
-      this.alpinePassage.update(dt, this.seasons);
+      this.alpinePassage.update(dt, this.seasons, v, this.sim.world);
     }
 
     if (draw) this.renderer.render(this.scene, this.camera);

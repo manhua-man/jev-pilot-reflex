@@ -309,3 +309,158 @@ export function detailedHeavyTruck(cabinColor = "#1e3a8a", containerColor = "#94
   }
   return group;
 }
+
+export function detailedAlpineSUV(color = "#2563eb") {
+  const group = new THREE.Group();
+  const paint = physical(`paint-suv:${color}`, { color, metalness: 0.5, roughness: 0.3 });
+  const trim = physical("suv-trim", { color: "#1f2429", roughness: 0.7, metalness: 0.2 });
+  const glass = physical("suv-glass", { color: "#1e293b", metalness: 0.4, roughness: 0.08, clearcoat: 1 });
+  const chrome = physical("suv-chrome", { color: "#cbd5e1", metalness: 0.9, roughness: 0.2 });
+  const rubber = physical("suv-rubber", { color: "#141518", roughness: 0.95 });
+  const led = physical("suv-headlight", { color: "#f8fcff", emissive: "#d9eeff", emissiveIntensity: 2.2 });
+  const tail = physical("suv-taillight", { color: "#ef4444", emissive: "#b91c1c", emissiveIntensity: 1.5 });
+
+  const box = (w, h, d, x, y, z, mat, radius = 0.03) => {
+    const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, radius), mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+
+  box(2.0, 0.72, 4.4, 0, 0.82, 0, paint, 0.15);
+  box(1.9, 0.25, 4.25, 0, 0.45, 0, trim, 0.08);
+  box(1.85, 0.78, 2.5, 0, 1.48, 0.2, paint, 0.12);
+  box(1.78, 0.62, 0.08, 0, 1.45, -0.98, glass);
+  box(1.72, 0.55, 0.08, 0, 1.45, 1.45, glass);
+  for (const s of [-0.94, 0.94]) {
+    box(0.06, 0.52, 2.2, s, 1.46, 0.25, glass);
+    box(0.18, 0.22, 0.8, s, 0.62, -1.2, trim, 0.05);
+    box(0.18, 0.22, 0.8, s, 0.62, 1.2, trim, 0.05);
+    box(0.35, 0.12, 0.08, s * 0.65, 0.88, -2.22, led);
+    box(0.35, 0.12, 0.08, s * 0.65, 0.88, 2.22, tail);
+  }
+  box(1.3, 0.08, 2.2, 0, 1.92, 0.2, trim, 0.02);
+  for (const s of [-0.4, 0, 0.4]) {
+    box(0.2, 0.1, 0.06, s, 2.02, -0.75, led);
+  }
+  const spare = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.22, 16), rubber);
+  spare.rotation.x = Math.PI / 2;
+  spare.position.set(0, 0.95, 2.32);
+  spare.castShadow = true;
+  group.add(spare);
+
+  const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.24, 16);
+  wheelGeo.rotateZ(Math.PI / 2);
+  for (const z of [-1.25, 1.25]) {
+    for (const s of [-0.98, 0.98]) {
+      const wMesh = new THREE.Mesh(wheelGeo, rubber);
+      wMesh.position.set(s, 0.38, z);
+      wMesh.castShadow = true;
+      group.add(wMesh);
+    }
+  }
+  return group;
+}
+
+export function detailedAlpineLoggingTruck(cabinColor = "#b91c1c") {
+  const group = new THREE.Group();
+  const paintCab = physical(`paint-cab:${cabinColor}`, { color: cabinColor, metalness: 0.6, roughness: 0.3 });
+  const chassis = physical("truck-chassis", { color: "#1e242b", roughness: 0.6, metalness: 0.4 });
+  const woodLog = physical("pine-log", { color: "#785338", roughness: 0.85 });
+  const rubber = physical("truck-rubber", { color: "#141518", roughness: 0.96 });
+  const chrome = physical("truck-chrome", { color: "#cbd5e1", metalness: 0.9, roughness: 0.2 });
+  const glass = physical("truck-glass", { color: "#1e293b", metalness: 0.4, roughness: 0.08 });
+  const led = physical("truck-headlight", { color: "#f8fcff", emissive: "#d9eeff", emissiveIntensity: 2.2 });
+  const tail = physical("truck-taillight", { color: "#ef4444", emissive: "#b91c1c", emissiveIntensity: 1.5 });
+
+  const box = (w, h, d, x, y, z, mat, radius = 0.03) => {
+    const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, radius), mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+
+  box(2.4, 1.8, 2.2, 0, 1.6, -2.8, paintCab, 0.08);
+  box(2.1, 0.7, 0.08, 0, 1.85, -3.85, glass);
+  box(2.4, 0.4, 8.5, 0, 0.65, 0.6, chassis, 0.04);
+  box(2.45, 0.3, 0.2, 0, 0.55, -3.9, chrome);
+  for (const s of [-0.95, 0.95]) {
+    box(0.28, 0.15, 0.08, s, 0.58, -3.95, led);
+    box(0.24, 0.15, 0.08, s, 0.58, 4.88, tail);
+  }
+
+  for (const z of [-1.2, 0.8, 2.8, 4.4]) {
+    for (const s of [-1.15, 1.15]) {
+      box(0.12, 1.7, 0.12, s, 1.6, z, chrome, 0.02);
+    }
+  }
+
+  const logPositions = [
+    [-0.6, 1.15], [0.6, 1.15],
+    [-0.3, 1.75], [0.3, 1.75],
+    [0.0, 2.35]
+  ];
+  const logGeo = new THREE.CylinderGeometry(0.36, 0.36, 6.2, 12);
+  logGeo.rotateX(Math.PI / 2);
+  for (const [lx, ly] of logPositions) {
+    const log = new THREE.Mesh(logGeo, woodLog);
+    log.position.set(lx, ly, 1.6);
+    log.castShadow = true;
+    group.add(log);
+  }
+
+  const wheelGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.3, 16);
+  wheelGeo.rotateZ(Math.PI / 2);
+  for (const z of [-3.2, 2.6, 4.0]) {
+    for (const s of [-1.12, 1.12]) {
+      const w = new THREE.Mesh(wheelGeo, rubber);
+      w.position.set(s, 0.48, z);
+      w.castShadow = true;
+      group.add(w);
+    }
+  }
+  return group;
+}
+
+export function detailedAlpineBus(color = "#eab308") {
+  const group = new THREE.Group();
+  const paintYellow = physical(`paint-bus:${color}`, { color, metalness: 0.4, roughness: 0.35 });
+  const paintWhite = physical("paint-white", { color: "#f8fafc", metalness: 0.3, roughness: 0.3 });
+  const glass = physical("bus-glass", { color: "#1e293b", metalness: 0.3, roughness: 0.08, clearcoat: 1 });
+  const rubber = physical("bus-rubber", { color: "#141518", roughness: 0.96 });
+  const led = physical("bus-headlight", { color: "#f8fcff", emissive: "#d9eeff", emissiveIntensity: 2.2 });
+  const tail = physical("bus-taillight", { color: "#ef4444", emissive: "#b91c1c", emissiveIntensity: 1.5 });
+
+  const box = (w, h, d, x, y, z, mat, radius = 0.04) => {
+    const m = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, radius), mat);
+    m.position.set(x, y, z);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+
+  box(2.2, 0.9, 6.8, 0, 0.85, 0, paintYellow, 0.12);
+  box(2.18, 0.85, 6.7, 0, 1.75, 0, glass, 0.08);
+  box(2.2, 0.28, 6.8, 0, 2.28, 0, paintWhite, 0.12);
+  box(2.1, 0.45, 0.08, 0, 1.82, -3.38, glass);
+  box(2.1, 0.45, 0.08, 0, 1.82, 3.38, glass);
+
+  for (const s of [-0.85, 0.85]) {
+    box(0.28, 0.16, 0.08, s, 0.72, -3.42, led);
+    box(0.24, 0.16, 0.08, s, 0.72, 3.42, tail);
+  }
+
+  const wheelGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.26, 16);
+  wheelGeo.rotateZ(Math.PI / 2);
+  for (const z of [-2.2, 2.2]) {
+    for (const s of [-1.02, 1.02]) {
+      const w = new THREE.Mesh(wheelGeo, rubber);
+      w.position.set(s, 0.44, z);
+      w.castShadow = true;
+      group.add(w);
+    }
+  }
+  return group;
+}

@@ -75,9 +75,12 @@ export function rearTrafficPressure(vehicle, traffic) {
 function axes(vehicle) {
   const sin = Math.sin(vehicle.heading || 0),
     cos = Math.cos(vehicle.heading || 0);
+  const isSmall = (vehicle.depth || 4.2) < 2.0;
+  const depth = vehicle.depth || (isSmall ? 0.95 : 4.2);
+  const width = vehicle.width || (isSmall ? 0.40 : 1.9);
   return [
-    { x: sin, z: -cos, radius: (vehicle.depth || 4.2) / 2 },
-    { x: cos, z: sin, radius: (vehicle.width || 1.9) / 2 },
+    { x: sin, z: -cos, radius: depth / 2 },
+    { x: cos, z: sin, radius: width / 2 },
   ];
 }
 
@@ -129,7 +132,11 @@ export function nearbyPathBlocker(vehicle, obstacles) {
 }
 
 export function followingGap(vehicle, other) {
+  const isSmall = (vehicle.depth || 4.2) < 2.0;
   const speed = Math.abs(vehicle.speed);
+  if (isSmall) {
+    return Math.max(1.2, 0.6 + (speed * speed) / 8 + speed * 0.3);
+  }
   return other?.type === "motorcycle"
     ? Math.min(3, 0.9 + speed * 0.15)
     : Math.min(2.5, 0.5 + speed * 0.12);
@@ -137,6 +144,9 @@ export function followingGap(vehicle, other) {
 
 export function leadVehicle(vehicle, traffic) {
   let lead = null;
+  const isSmall = (vehicle.depth || 4.2) < 2.0;
+  const vDepth = vehicle.depth || (isSmall ? 0.95 : 4.2);
+  const vWidth = vehicle.width || (isSmall ? 0.40 : 1.9);
   for (const other of traffic) {
     if (other.id === vehicle.id) continue;
     const dx = other.x - vehicle.x,
@@ -149,20 +159,24 @@ export function leadVehicle(vehicle, traffic) {
     // Oncoming and crossing vehicles are handled by the swept-path check.
     // They are not a queue to follow just because they enter the forward strip.
     if (Math.cos(relative) < 0.5) continue;
+    const oDepth = other.depth || (isSmall ? 0.95 : 4.2);
+    const oWidth = other.width || (isSmall ? 0.40 : 1.9);
     const length =
-      (Math.abs(Math.cos(relative)) * (other.depth || 4.2)) / 2 +
-      (Math.abs(Math.sin(relative)) * (other.width || 1.9)) / 2;
+      (Math.abs(Math.cos(relative)) * oDepth) / 2 +
+      (Math.abs(Math.sin(relative)) * oWidth) / 2;
     const width =
-      (Math.abs(Math.cos(relative)) * (other.width || 1.9)) / 2 +
-      (Math.abs(Math.sin(relative)) * (other.depth || 4.2)) / 2;
-    const gap = forward - (vehicle.depth || 4.2) / 2 - length;
+      (Math.abs(Math.cos(relative)) * oWidth) / 2 +
+      (Math.abs(Math.sin(relative)) * oDepth) / 2;
+    const gap = forward - vDepth / 2 - length;
     const buffer =
       other.type === "motorcycle"
-        ? 0.55
-        : Math.min(0.45, 0.18 + Math.abs(vehicle.speed) * 0.025);
+        ? (isSmall ? 0.15 : 0.55)
+        : isSmall
+          ? 0.10
+          : Math.min(0.45, 0.18 + Math.abs(vehicle.speed) * 0.025);
     if (
       forward > 0 &&
-      Math.abs(right) < (vehicle.width || 1.9) / 2 + width + buffer &&
+      Math.abs(right) < vWidth / 2 + width + buffer &&
       (!lead || gap < lead.gap)
     )
       lead = { other, gap };
