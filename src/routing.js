@@ -110,8 +110,8 @@ export function routesFromLocation(
           ...route.points.filter((p) => p.s > start),
         ].map((p) => ({ ...p, s: p.s - start }));
         route.crossings = route.crossings
-          .filter((c) => c.stopS >= start - 19)
-          .map((c) => ({ ...c, stopS: c.stopS - start }));
+          .filter((c) => c.stopS >= start - 2)
+          .map((c) => ({ ...c, stopS: Math.max(0, c.stopS - start) }));
         route.length -= start;
         if (route.sections)
           route.sections = route.sections

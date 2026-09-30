@@ -21,7 +21,10 @@ export function rng(seed) {
 export const choose = (r, a) => a[Math.floor(r() * a.length)];
 export function nearestOnPath(p, points, hint = 0) {
   let best = { distance: Infinity, index: 0, t: 0, x: 0, z: 0, s: 0 };
-  for (let i = Math.max(0, hint - 15); i < points.length - 1; i++) {
+  const h = Math.max(0, Math.floor(hint));
+  const start = h > 0 ? Math.max(0, h - 20) : 0;
+  const end = h > 0 ? Math.min(points.length - 1, h + 80) : points.length - 1;
+  for (let i = start; i < end; i++) {
     const a = points[i],
       b = points[i + 1],
       dx = b.x - a.x,
@@ -41,6 +44,31 @@ export function nearestOnPath(p, points, hint = 0) {
         s: a.s + Math.sqrt(l2) * t,
         heading: heading(a, b),
       };
+  }
+  if (h > 0 && best.distance <= 15) return best;
+  if (h > 0) {
+    for (let i = 0; i < points.length - 1; i++) {
+      if (i >= start && i < end) continue;
+      const a = points[i],
+        b = points[i + 1],
+        dx = b.x - a.x,
+        dz = b.z - a.z,
+        l2 = dx * dx + dz * dz;
+      const t = clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / (l2 || 1), 0, 1),
+        x = a.x + dx * t,
+        z = a.z + dz * t,
+        d = Math.hypot(p.x - x, p.z - z);
+      if (d < best.distance)
+        best = {
+          distance: d,
+          index: i,
+          t,
+          x,
+          z,
+          s: a.s + Math.sqrt(l2) * t,
+          heading: heading(a, b),
+        };
+    }
   }
   return best;
 }

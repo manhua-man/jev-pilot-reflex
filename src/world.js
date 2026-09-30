@@ -433,7 +433,7 @@ export function makeRoute(world, ids, laneOffset) {
       if (Math.abs(sinDiff) > 0.05) {
         const dx = b.x - a.x,
           dz = b.z - a.z;
-        const t = (dx * Math.cos(hout) + dz * Math.sin(hout)) / sinDiff;
+        const t = -(dx * Math.cos(hout) + dz * Math.sin(hout)) / sinDiff;
         if (t > 0 && t < 45) {
           c = { x: a.x + t * Math.sin(hin), z: a.z - t * Math.cos(hin) };
         }

@@ -158,7 +158,7 @@ export function createDrivingPlan(
     Math.max(100, Math.abs(car.speed) * 4),
   );
   const occupancy = roadOccupancy(car, surfaces),
-    near = nearestOnPath(car, car.route.points);
+    near = nearestOnPath(car, car.route.points, Math.floor(car.s || 0));
   const recovering =
     !occupancy.on_road ||
     near.distance > 6 ||

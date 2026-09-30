@@ -752,7 +752,7 @@ export class Simulation {
     }
     this.contacts.clear();
     this.distance += dist(old, v);
-    const near = nearestOnPath(v, v.route.points);
+    const near = nearestOnPath(v, v.route.points, Math.floor(v.s || 0));
     v.s = near.s;
     // Reset immediately on rejoining, including while a worker is calculating.
     if (near.distance <= REROUTE_DISTANCE_M && this.offRouteSince != null) {
@@ -803,7 +803,7 @@ export class Simulation {
       return;
     this.nextRouteCheck = this.time + 0.75;
     const v = this.player,
-      near = nearestOnPath(v, v.route.points);
+      near = nearestOnPath(v, v.route.points, Math.floor(v.s || 0));
     // Keep the route through turns, queues, and recovery on the same street.
     // Heading and time spent stopped never override this proximity check.
     if (near.distance <= REROUTE_DISTANCE_M) {
@@ -831,9 +831,9 @@ export class Simulation {
     if (next.route.ids.join(",") === v.route.ids.join(",")) return;
     this.installRoute(next);
   }
-  installRoute(next) {
+  installRoute(next, force = false) {
     // A background calculation or Jev response may arrive after we rejoin.
-    if (!this.routeChoiceNeeded()) return false;
+    if (!force && !this.routeChoiceNeeded()) return false;
     const v = this.player;
     const previousControl = this.crossingFor(v);
     const served = previousControl && v.stops[previousControl.nodeId];
@@ -1026,7 +1026,7 @@ export class Simulation {
   }
   navigation() {
     const v = this.player,
-      near = nearestOnPath(v, v.route.points),
+      near = nearestOnPath(v, v.route.points, Math.floor(v.s || 0)),
       look = pointAt(
         v.route.points,
         v.s + Math.max(5, Math.abs(v.speed) * 1.1),
@@ -1227,7 +1227,7 @@ export class Simulation {
     // city-junction heuristic mistakes a sweeping ramp for a sharp turn.
     const turnCap = nav.phase
       ? Infinity
-      : Math.abs(nav.heading_error_deg) > 15 ||
+      : (Math.abs(nav.heading_error_deg) > 22 && nav.turn_distance_m < 30) ||
           (["left", "right"].includes(nav.next_turn) &&
             nav.turn_distance_m < 24)
         ? nav.next_turn === "right"
@@ -1561,16 +1561,16 @@ export class Simulation {
     if (!junction) return false;
     if (v.z < junction.z + 18) {
       const newRoute = makeForkRoute(this.world, branch);
-      const near = nearestOnPath(v, newRoute.points);
+      const near = nearestOnPath(v, newRoute.points, Math.floor(v.s || 0));
       this.blinker = branch;
-      this.installRoute({ route: newRoute, progress: near.s });
+      const ok = this.installRoute({ route: newRoute, progress: near.s }, true);
       this.event(
         branch === "left"
           ? "导航分流: 已选择 ↖ 机场快速路 (开启左转向灯)"
           : "导航分流: 已选择 ↗ 中心商务区 (开启右转向灯)",
-        "info"
+        "info",
       );
-      return true;
+      return ok;
     }
     return false;
   }
@@ -1683,48 +1683,39 @@ export class Simulation {
     const candidates = this.world.nodes.filter(
       (n) => n.id !== curDestId && dist(n, curDestNode) > 100 && n.neighbors.length > 0
     );
-    const nextDest = choose(this.r, candidates.length > 0 ? candidates : this.world.nodes);
+    const prevNode =
+      this.destinationApproach?.[0] ||
+      (v.route?.ids?.length >= 2 ? v.route.ids.at(-2) : null);
+
+    let nextDest = null;
+    let pathIds = null;
+    const shuffled = [...candidates].sort(() => this.r() - 0.5);
+    for (const cand of shuffled) {
+      try {
+        const p = shortestPath(this.world, curDestId, cand.id, prevNode);
+        if (p && p.length >= 2) {
+          pathIds = p;
+          nextDest = cand;
+          break;
+        }
+      } catch {}
+    }
+    if (!pathIds || !nextDest) return;
 
     try {
-      const prevNode = this.destinationApproach?.[0] || null;
-      const pathIds = shortestPath(this.world, curDestId, nextDest.id, prevNode);
-      const legRoute = makeRoute(this.world, pathIds);
-      if (legRoute && legRoute.points.length > 1) {
-        const lastPt = v.route.points.at(-1);
-        const startOffset = lastPt.s;
-        for (let i = 1; i < legRoute.points.length; i++) {
-          const pt = legRoute.points[i];
-          v.route.points.push({
-            x: pt.x,
-            z: pt.z,
-            s: startOffset + pt.s,
-          });
-        }
-        v.route.length = v.route.points.at(-1).s;
-        v.route.ids = [...v.route.ids, ...pathIds.slice(1)];
-        if (legRoute.crossings?.length) {
-          v.route.crossings.push(
-            ...legRoute.crossings.map((c) => ({
-              ...c,
-              stopS: c.stopS + startOffset,
-            }))
-          );
-        }
-        if (legRoute.sections?.length) {
-          v.route.sections.push(
-            ...legRoute.sections.map((sec) => ({
-              ...sec,
-              startS: sec.startS + startOffset,
-              endS: sec.endS + startOffset,
-            }))
-          );
-        }
+      const fullIds = [...v.route.ids, ...pathIds.slice(1)];
+      const fullRoute = makeRoute(this.world, fullIds);
+      if (fullRoute && fullRoute.points.length > 1) {
+        v.route = this.world.route = fullRoute;
         this.world.destination = nextDest.id;
         this.destinationApproach = pathIds.slice(-2);
-        this.destinationPoint = { ...v.route.points.at(-1) };
+        this.destinationPoint = { ...fullRoute.points.at(-1) };
         this.routeVersion++;
         this.stageLeg = (this.stageLeg || 1) + 1;
-        this.event(`∞ 无尽巡航：打卡第 ${this.stageLeg - 1} 赛段！已无缝接力规划第 ${this.stageLeg} 赛段 ➔ [${nextDest.id}]`, "success");
+        this.event(
+          `∞ 无尽巡航：打卡第 ${this.stageLeg - 1} 赛段！已无缝接力规划第 ${this.stageLeg} 赛段 ➔ [${nextDest.id}]`,
+          "success",
+        );
       }
     } catch (e) {
       console.warn("Failed to append infinite leg:", e);

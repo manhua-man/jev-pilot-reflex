@@ -78,7 +78,7 @@ export function makeHighwayRoute(world, ids, laneOffset = 9) {
   const append = (path) => {
     for (const p of path) {
       const last = points.at(-1);
-      if (last && dist(last, p) < 0.001) continue;
+      if (last && dist(last, p) < 0.25) continue;
       points.push({ x: p.x, z: p.z, s: last ? last.s + dist(last, p) : 0 });
     }
   };
