@@ -169,54 +169,61 @@ function createSafeCanvas(w = 256, h = 256) {
             return h;
         }
 
+        function getGenesisDioramaHeight(x, z) {
+            let h = BASE_HEIGHT;
+            h += mountainHeight(x, z);
+            h += valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
+
+            const stream = getStreamMetrics(x, z);
+            const streamDist = stream.distance;
+            if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
+
+            const latDist = getLateralRoadDist(x, z);
+            const roadShoulder = ROAD_WIDTH / 2 + 0.6;
+            if (latDist < roadShoulder) {
+                const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
+                const s = t * t * (3 - 2 * t);
+                h = 0.05 * (1 - s) + h * s;
+            }
+
+            if (streamDist < 0.62) {
+                const channel = 1 - smoothstep(streamDist, 0.08, 0.62);
+                const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, 1.08);
+                const nearBridge = 1 - smoothstep(latDist, 1.18, 1.62);
+                h -= channel * outsideDeck * nearBridge * 0.42;
+            }
+
+            if (stream.progress >= BRIDGE_STREAM_PROGRESS && streamDist < 0.68) {
+                const water = getDownstreamWaterHeight(stream.progress);
+                const bed = lerp(h, water - 0.085, 1 - smoothstep(streamDist, 0.06, 0.68));
+                h = Math.min(h, bed);
+            }
+            return h;
+        }
+
         function getContinuousAlpineHeight(x, z, world = null) {
             const inGenesis = Math.abs(x) <= 7.5 && Math.abs(z) <= 7.5;
-            let h = BASE_HEIGHT;
-
             if (inGenesis) {
-                h += mountainHeight(x, z);
-                h += valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
+                return getGenesisDioramaHeight(x, z);
+            }
 
-                const stream = getStreamMetrics(x, z);
-                const streamDist = stream.distance;
-                if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
+            // Procedural terrain: continuous multi-octave mountain ridges & valleys
+            let h = BASE_HEIGHT;
+            const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
+            const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
+            const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
+            const massif = Math.pow(ridge1, 1.6) * 3.5 + Math.pow(ridge2, 1.4) * 1.2;
+            const rolling = valueNoise(x * 0.22, z * 0.22) * 0.8 + valueNoise(x * 0.55, z * 0.55) * 0.35;
+            h += massif + rolling;
 
-                const latDist = getLateralRoadDist(x, z);
-                const roadShoulder = ROAD_WIDTH / 2 + 0.6;
-                if (latDist < roadShoulder) {
-                    const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
-                    const s = t * t * (3 - 2 * t);
-                    h = 0.05 * (1 - s) + h * s;
-                }
-
-                if (streamDist < 0.62) {
-                    const channel = 1 - smoothstep(streamDist, 0.08, 0.62);
-                    const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, 1.08);
-                    const nearBridge = 1 - smoothstep(latDist, 1.18, 1.62);
-                    h -= channel * outsideDeck * nearBridge * 0.42;
-                }
-
-                if (stream.progress >= BRIDGE_STREAM_PROGRESS && streamDist < 0.68) {
-                    const water = getDownstreamWaterHeight(stream.progress);
-                    const bed = lerp(h, water - 0.085, 1 - smoothstep(streamDist, 0.06, 0.68));
-                    h = Math.min(h, bed);
-                }
-            } else {
-                // Procedural terrain: continuous multi-octave mountain ridges & valleys
-                const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
-                const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
-                const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
-                const massif = Math.pow(ridge1, 1.6) * 3.5 + Math.pow(ridge2, 1.4) * 1.2;
-                const rolling = valueNoise(x * 0.22, z * 0.22) * 0.8 + valueNoise(x * 0.55, z * 0.55) * 0.35;
-                h += massif + rolling;
-
-                // Seamless blend with genesis boundary
-                const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
-                if (dEdge < 2.5) {
-                    const blend = clamp(dEdge / 2.5, 0, 1);
-                    const genH = BASE_HEIGHT + valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
-                    h = lerp(genH, h, blend);
-                }
+            // Seamless blend with genesis boundary
+            const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
+            if (dEdge < 3.5) {
+                const blend = clamp(dEdge / 3.5, 0, 1);
+                const sBlend = blend * blend * (3 - 2 * blend);
+                const genH = getGenesisDioramaHeight(x, z);
+                h = lerp(genH, h, sBlend);
+            }
 
                 // Smooth road corridor carving
                 if (world && world.edges && world.byId) {
@@ -236,6 +243,10 @@ function createSafeCanvas(w = 256, h = 256) {
                             targetRoadH = 0.05 + valueNoise(px * 0.05, pz * 0.05) * 0.5;
                         }
                     }
+                    if (dEdge < 5.0) {
+                        const roadBlend = clamp(dEdge / 5.0, 0, 1);
+                        targetRoadH = lerp(0.05, targetRoadH, roadBlend);
+                    }
                     const roadShoulder = ROAD_WIDTH / 2 + 0.85;
                     if (minDist < roadShoulder) {
                         const t = clamp((minDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
@@ -243,7 +254,6 @@ function createSafeCanvas(w = 256, h = 256) {
                         h = targetRoadH * (1 - s) + h * s;
                     }
                 }
-            }
             return h;
         }
 
@@ -420,10 +430,13 @@ function createSafeCanvas(w = 256, h = 256) {
            Reads: uSnowLine, uSnowCoverage, uFrost, uLush, uDry, uMeadowTint, uHeightFog.
            ════════════════════════════════════════════════════════════════════ */
         class Terrain {
-            constructor(scene) {
+            constructor(scene, world = null) {
                 this.scene = scene;
+                this.world = world;
                 this.buildSurface();
-                this.buildCliffs();
+                // In infinite continuous alpine world, perimeter cliff drop-offs are disabled
+                // so terrain blends seamlessly without vertical cuts across the roadbed.
+                // this.buildCliffs();
                 this.buildBoulders();
             }
 
@@ -435,7 +448,7 @@ function createSafeCanvas(w = 256, h = 256) {
                 const pos = geo.attributes.position;
                 const heights = new Float32Array(pos.count);
                 for (let i = 0; i < pos.count; i++) {
-                    heights[i] = getTerrainHeight(pos.getX(i), pos.getZ(i));
+                    heights[i] = getContinuousAlpineHeight(pos.getX(i), pos.getZ(i), this.world);
                     pos.setY(i, heights[i]);
                 }
                 const W = SEG + 1;
@@ -2351,6 +2364,51 @@ function createSafeCanvas(w = 256, h = 256) {
 
 
 
+let _sharedAsphaltMat = null;
+let _sharedYellowMat = null;
+let _sharedWhiteMat = null;
+function getSharedRoadMaterials() {
+    if (!_sharedAsphaltMat) {
+        _sharedAsphaltMat = new THREE.MeshStandardMaterial({
+            color: 0x24272c,
+            roughness: 0.85,
+            metalness: 0.05,
+            flatShading: false,
+        });
+        _sharedYellowMat = new THREE.MeshStandardMaterial({
+            color: 0xf59e0b,
+            roughness: 0.45,
+            metalness: 0.08,
+            emissive: 0x7c3a00,
+            emissiveIntensity: 0.15,
+        });
+        _sharedWhiteMat = new THREE.MeshStandardMaterial({
+            color: 0xe2e8f0,
+            roughness: 0.45,
+            metalness: 0.08,
+        });
+    }
+    return { asphaltMat: _sharedAsphaltMat, yellowMat: _sharedYellowMat, whiteMat: _sharedWhiteMat };
+}
+
+function isNearOtherRoadEdge(x, z, ignoreEdgeId, world) {
+    if (!world || !world.edges || !world.byId) return false;
+    for (const otherE of world.edges) {
+        if (otherE.id === ignoreEdgeId) continue;
+        const oa = world.byId[otherE.a], ob = world.byId[otherE.b];
+        if (!oa || !ob) continue;
+        const dx = ob.x - oa.x, dz = ob.z - oa.z;
+        const l2 = dx * dx + dz * dz;
+        if (!l2) continue;
+        const t = Math.max(0, Math.min(1, ((x - oa.x) * dx + (z - oa.z) * dz) / l2));
+        const px = oa.x + t * dx, pz = oa.z + t * dz;
+        if (Math.hypot(x - px, z - pz) < (otherE.width || 1.4) / 2 + 0.5) {
+            return true;
+        }
+    }
+    return false;
+}
+
 class AlpineChunk {
     constructor(cx, cz, parentGroup, glowMaterials = [], world = null) {
         this.cx = cx;
@@ -2363,7 +2421,7 @@ class AlpineChunk {
 
         if (cx === 0 && cz === 0) {
             // Genesis diorama tile (0, 0)
-            this.terrain = new Terrain(this.group);
+            this.terrain = new Terrain(this.group, this.world);
             this.stream = new Stream(this.group, this.terrain.rockGeometry, this.terrain.rockMaterial);
             this.updatables.push(this.stream);
 
@@ -2388,23 +2446,24 @@ class AlpineChunk {
 
             this.birds = new BirdFlock(this.group);
             this.updatables.push(this.birds);
+
+            this.buildRoads();
         } else {
             // Procedural mountain tile
             this.buildSurface();
             this.buildScenery();
+            this.buildRoads();
         }
 
         parentGroup.add(this.group);
     }
 
     buildSurface() {
-        const SEG = 30;
-        const CHUNK_SIZE = 16.0;
+        const SEG = 60;
+        const CHUNK_SIZE = 15.0;
         const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, SEG, SEG);
         geo.rotateX(-Math.PI / 2);
-        const ox = this.cx * CHUNK_SIZE;
-        const oz = this.cz * CHUNK_SIZE;
-        geo.translate(ox + CHUNK_SIZE / 2, 0, oz + CHUNK_SIZE / 2);
+        geo.translate(this.cx * CHUNK_SIZE, 0, this.cz * CHUNK_SIZE);
 
         const pos = geo.attributes.position;
         const heights = new Float32Array(pos.count);
@@ -2482,9 +2541,9 @@ class AlpineChunk {
     }
 
     buildScenery() {
-        const CHUNK_SIZE = 16.0;
-        const ox = this.cx * CHUNK_SIZE;
-        const oz = this.cz * CHUNK_SIZE;
+        const CHUNK_SIZE = 15.0;
+        const ox = (this.cx - 0.5) * CHUNK_SIZE;
+        const oz = (this.cz - 0.5) * CHUNK_SIZE;
 
         const batch = new StaticBatch();
         const trunkMat = stdMat(0x4a2f20, 0.9);
@@ -2544,6 +2603,8 @@ class AlpineChunk {
                     for (const side of [-1, 1]) {
                         const gp = move(pAlong, hEdge + Math.PI / 2, side * (ROAD_WIDTH / 2 + 0.18));
                         if (Math.abs(gp.x) <= 7.5 && Math.abs(gp.z) <= 7.5) continue;
+                        if (gp.x < ox || gp.x >= ox + CHUNK_SIZE || gp.z < oz || gp.z >= oz + CHUNK_SIZE) continue;
+                        if (isNearOtherRoadEdge(gp.x, gp.z, e.id, this.world)) continue;
                         const py = getContinuousAlpineHeight(gp.x, gp.z, this.world);
                         batch.add(new THREE.CylinderGeometry(0.035, 0.035, 0.32, 5), woodRail, gp.x, py + 0.16, gp.z);
                         batch.add(new THREE.BoxGeometry(0.05, 0.08, 1.9), woodRail, gp.x, py + 0.22, gp.z, 0, Math.PI - hEdge, 0);
@@ -2564,11 +2625,11 @@ class AlpineChunk {
                 } else if (o.type === "alpine_fork_gantry") {
                     const gy = getContinuousAlpineHeight(o.x, o.z, this.world);
                     const gh = o.heading || 0;
-                    for (const s of [-1.2, 1.2]) {
+                    for (const s of [-1.35, 1.35]) {
                         const postP = move({ x: o.x, z: o.z }, gh + Math.PI / 2, s);
-                        batch.add(new THREE.CylinderGeometry(0.08, 0.08, 1.5, 6), woodRail, postP.x, gy + 0.75, postP.z);
+                        batch.add(new THREE.CylinderGeometry(0.08, 0.08, 2.1, 6), woodRail, postP.x, gy + 1.05, postP.z);
                     }
-                    batch.box(woodRail, 2.6, 0.15, 0.18, o.x, gy + 1.45, o.z, 0, -gh, 0);
+                    batch.box(woodRail, 2.85, 0.22, 0.18, o.x, gy + 2.05, o.z, 0, -gh, 0);
                 }
             }
         }
@@ -2576,9 +2637,206 @@ class AlpineChunk {
         batch.build(this.group);
     }
 
+    buildRoads() {
+        if (!this.world || !this.world.edges || !this.world.byId) return;
+        const CHUNK_SIZE = 15.0;
+        const minX = (this.cx - 0.5) * CHUNK_SIZE;
+        const maxX = (this.cx + 0.5) * CHUNK_SIZE;
+        const minZ = (this.cz - 0.5) * CHUNK_SIZE;
+        const maxZ = (this.cz + 0.5) * CHUNK_SIZE;
+        const isGenesis = (this.cx === 0 && this.cz === 0);
+
+        const asphaltPos = [];
+        const asphaltNorm = [];
+        const yellowPos = [];
+        const yellowNorm = [];
+        const whitePos = [];
+        const whiteNorm = [];
+
+        const pushTri = (posArr, normArr, p1, p2, p3) => {
+            posArr.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, p3.x, p3.y, p3.z);
+            const ax = p2.x - p1.x, ay = p2.y - p1.y, az = p2.z - p1.z;
+            const bx = p3.x - p1.x, by = p3.y - p1.y, bz = p3.z - p1.z;
+            let nx = ay * bz - az * by;
+            let ny = az * bx - ax * bz;
+            let nz = ax * by - ay * bx;
+            const l = Math.hypot(nx, ny, nz) || 1;
+            nx /= l; ny /= l; nz /= l;
+            normArr.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+        };
+
+        const pushQuad = (posArr, normArr, p1, p2, p3, p4) => {
+            pushTri(posArr, normArr, p1, p2, p3);
+            pushTri(posArr, normArr, p2, p4, p3);
+        };
+
+        for (const e of this.world.edges) {
+            const a = this.world.byId[e.a], b = this.world.byId[e.b];
+            if (!a || !b) continue;
+
+            // In Genesis chunk, skip main diagonal pass (alp-0 .. alp-6) as it is shaded into diorama terrain + bridge
+            if (isGenesis) {
+                const isMainPass = (e.a.startsWith("alp-") && !e.a.includes("spur") && !e.a.includes("-hp-") && !e.a.includes("-fk-") && !e.a.includes("-rb-") && !e.a.includes("-vd-") && !e.a.includes("-vg-")) &&
+                                   (e.b.startsWith("alp-") && !e.b.includes("spur") && !e.b.includes("-hp-") && !e.b.includes("-fk-") && !e.b.includes("-rb-") && !e.b.includes("-vd-") && !e.b.includes("-vg-"));
+                if (isMainPass) continue;
+            }
+
+            const edgeMinX = Math.min(a.x, b.x), edgeMaxX = Math.max(a.x, b.x);
+            const edgeMinZ = Math.min(a.z, b.z), edgeMaxZ = Math.max(a.z, b.z);
+            if (edgeMaxX < minX - 1.5 || edgeMinX > maxX + 1.5 || edgeMaxZ < minZ - 1.5 || edgeMinZ > maxZ + 1.5) continue;
+
+            const totalLen = dist(a, b);
+            if (totalLen < 0.05) continue;
+            const hEdge = heading(a, b);
+            const width = e.width || 1.4;
+            const halfW = width / 2;
+
+            const step = 0.35;
+            const stepsCount = Math.ceil(totalLen / step);
+
+            for (let i = 0; i < stepsCount; i++) {
+                const s0 = i * step;
+                const s1 = Math.min((i + 1) * step, totalLen);
+                if (s1 - s0 < 0.02) continue;
+
+                const p0 = move(a, hEdge, s0);
+                const p1 = move(a, hEdge, s1);
+
+                const midSegX = (p0.x + p1.x) / 2, midSegZ = (p0.z + p1.z) / 2;
+                if (midSegX < minX || midSegX >= maxX || midSegZ < minZ || midSegZ >= maxZ) {
+                    continue;
+                }
+
+                // If inside genesis core area for main diorama, let diorama terrain shine
+                if (!isGenesis && Math.abs(p0.x) < 7.4 && Math.abs(p0.z) < 7.4 && Math.abs(p1.x) < 7.4 && Math.abs(p1.z) < 7.4) {
+                    continue;
+                }
+
+                const LA2D = move(p0, hEdge - Math.PI / 2, halfW);
+                const RA2D = move(p0, hEdge + Math.PI / 2, halfW);
+                const LB2D = move(p1, hEdge - Math.PI / 2, halfW);
+                const RB2D = move(p1, hEdge + Math.PI / 2, halfW);
+
+                const yLA = getContinuousAlpineHeight(LA2D.x, LA2D.z, this.world) + 0.025;
+                const yRA = getContinuousAlpineHeight(RA2D.x, RA2D.z, this.world) + 0.025;
+                const yLB = getContinuousAlpineHeight(LB2D.x, LB2D.z, this.world) + 0.025;
+                const yRB = getContinuousAlpineHeight(RB2D.x, RB2D.z, this.world) + 0.025;
+
+                const yCA = getContinuousAlpineHeight(p0.x, p0.z, this.world) + 0.028;
+                const yCB = getContinuousAlpineHeight(p1.x, p1.z, this.world) + 0.028;
+
+                const LA = { x: LA2D.x, y: yLA, z: LA2D.z };
+                const RA = { x: RA2D.x, y: yRA, z: RA2D.z };
+                const LB = { x: LB2D.x, y: yLB, z: LB2D.z };
+                const RB = { x: RB2D.x, y: yRB, z: RB2D.z };
+
+                const CA = { x: p0.x, y: yCA, z: p0.z };
+                const CB = { x: p1.x, y: yCB, z: p1.z };
+
+                // 1. Asphalt road surface (two quads forming a slightly arched crown)
+                pushQuad(asphaltPos, asphaltNorm, LA, CA, LB, CB);
+                pushQuad(asphaltPos, asphaltNorm, CA, RA, CB, RB);
+
+                // 2. Road side skirts (3.5cm downward edge so road never floats on steep slopes)
+                const LA_bot = { x: LA.x, y: yLA - 0.035, z: LA.z };
+                const LB_bot = { x: LB.x, y: yLB - 0.035, z: LB.z };
+                pushQuad(asphaltPos, asphaltNorm, LB, LA, LB_bot, LA_bot);
+
+                const RA_bot = { x: RA.x, y: yRA - 0.035, z: RA.z };
+                const RB_bot = { x: RB.x, y: yRB - 0.035, z: RB.z };
+                pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
+
+                // 3. Dashed yellow center line (0.8m period, 0.04m width)
+                const dashStep = Math.floor(s0 / 0.8);
+                if (dashStep % 2 === 0) {
+                    const DLA_2D = move(p0, hEdge - Math.PI / 2, 0.022);
+                    const DRA_2D = move(p0, hEdge + Math.PI / 2, 0.022);
+                    const DLB_2D = move(p1, hEdge - Math.PI / 2, 0.022);
+                    const DRB_2D = move(p1, hEdge + Math.PI / 2, 0.022);
+                    const DLA = { x: DLA_2D.x, y: yCA + 0.005, z: DLA_2D.z };
+                    const DRA = { x: DRA_2D.x, y: yCA + 0.005, z: DRA_2D.z };
+                    const DLB = { x: DLB_2D.x, y: yCB + 0.005, z: DLB_2D.z };
+                    const DRB = { x: DRB_2D.x, y: yCB + 0.005, z: DRB_2D.z };
+                    pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+                }
+
+                // 4. Solid white edge markings
+                // Left edge marking (inset 0.04m - 0.07m)
+                const WLA1_2D = move(p0, hEdge - Math.PI / 2, halfW - 0.04);
+                const WLA2_2D = move(p0, hEdge - Math.PI / 2, halfW - 0.07);
+                const WLB1_2D = move(p1, hEdge - Math.PI / 2, halfW - 0.04);
+                const WLB2_2D = move(p1, hEdge - Math.PI / 2, halfW - 0.07);
+                const WLA1 = { x: WLA1_2D.x, y: yLA + 0.004, z: WLA1_2D.z };
+                const WLA2 = { x: WLA2_2D.x, y: yLA + 0.004, z: WLA2_2D.z };
+                const WLB1 = { x: WLB1_2D.x, y: yLB + 0.004, z: WLB1_2D.z };
+                const WLB2 = { x: WLB2_2D.x, y: yLB + 0.004, z: WLB2_2D.z };
+                pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
+
+                // Right edge marking
+                const WRA1_2D = move(p0, hEdge + Math.PI / 2, halfW - 0.07);
+                const WRA2_2D = move(p0, hEdge + Math.PI / 2, halfW - 0.04);
+                const WRB1_2D = move(p1, hEdge + Math.PI / 2, halfW - 0.07);
+                const WRB2_2D = move(p1, hEdge + Math.PI / 2, halfW - 0.04);
+                const WRA1 = { x: WRA1_2D.x, y: yRA + 0.004, z: WRA1_2D.z };
+                const WRA2 = { x: WRA2_2D.x, y: yRA + 0.004, z: WRA2_2D.z };
+                const WRB1 = { x: WRB1_2D.x, y: yRB + 0.004, z: WRB1_2D.z };
+                const WRB2 = { x: WRB2_2D.x, y: yRB + 0.004, z: WRB2_2D.z };
+                pushQuad(whitePos, whiteNorm, WRA1, WRA2, WRB1, WRB2);
+            }
+        }
+
+        this.roadGroup = new THREE.Group();
+        this.roadGroup.name = `AlpineRoads_${this.cx}_${this.cz}`;
+
+        const mats = getSharedRoadMaterials();
+
+        if (asphaltPos.length > 0) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(asphaltPos, 3));
+            geo.setAttribute('normal', new THREE.Float32BufferAttribute(asphaltNorm, 3));
+            const mesh = new THREE.Mesh(geo, mats.asphaltMat);
+            mesh.receiveShadow = true;
+            this.roadGroup.add(mesh);
+        }
+
+        if (yellowPos.length > 0) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(yellowPos, 3));
+            geo.setAttribute('normal', new THREE.Float32BufferAttribute(yellowNorm, 3));
+            const mesh = new THREE.Mesh(geo, mats.yellowMat);
+            this.roadGroup.add(mesh);
+        }
+
+        if (whitePos.length > 0) {
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(whitePos, 3));
+            geo.setAttribute('normal', new THREE.Float32BufferAttribute(whiteNorm, 3));
+            const mesh = new THREE.Mesh(geo, mats.whiteMat);
+            this.roadGroup.add(mesh);
+        }
+
+        this.group.add(this.roadGroup);
+    }
+
+    rebuildRoads() {
+        if (this.roadGroup) {
+            this.group.remove(this.roadGroup);
+            this.roadGroup.traverse(o => {
+                if (o.isMesh) o.geometry?.dispose();
+            });
+            this.roadGroup = null;
+        }
+        this.buildRoads();
+    }
+
     dispose() {
         if (this.surfaceMesh) {
             this.surfaceMesh.geometry.dispose();
+        }
+        if (this.roadGroup) {
+            this.roadGroup.traverse(o => {
+                if (o.isMesh) o.geometry?.dispose();
+            });
         }
         this.group.traverse(o => {
             if (o.isMesh) {
@@ -2597,14 +2855,16 @@ export class AlpinePassage {
         this.glowMaterials = glowMaterials;
         this.world = world;
         this.chunks = new Map();
+        this.lastEdgeCount = world?.edges?.length || 0;
 
-        // Genesis chunk (0, 0) is rendered by this.dioramaGroup
+        // 1. Permanently instantiate Genesis Diorama chunk (0, 0)
+        const genesis = new AlpineChunk(0, 0, this.group, this.glowMaterials, this.world);
+        this.chunks.set("0,0", genesis);
 
         scene.add(this.group);
     }
 
     ensureChunk(cx, cz) {
-        if (cx === 0 && cz === 0) return null; // Handled by dioramaGroup
         const key = `${cx},${cz}`;
         if (!this.chunks.has(key)) {
             const chunk = new AlpineChunk(cx, cz, this.group, this.glowMaterials, this.world);
@@ -2615,14 +2875,22 @@ export class AlpinePassage {
 
     update(dt, controller, playerPos = null, world = null) {
         if (!controller) return;
-        if (world) this.world = world;
+        if (world) {
+            this.world = world;
+            if (world.edges && world.edges.length !== this.lastEdgeCount) {
+                this.lastEdgeCount = world.edges.length;
+                for (const chunk of this.chunks.values()) {
+                    chunk.rebuildRoads();
+                }
+            }
+        }
         this.time = (this.time || 0) + dt;
 
         // Dynamic Chunk Streaming around player
         if (playerPos) {
-            const CHUNK_SIZE = 16.0;
-            const pcx = Math.floor(playerPos.x / CHUNK_SIZE);
-            const pcz = Math.floor(playerPos.z / CHUNK_SIZE);
+            const CHUNK_SIZE = 15.0;
+            const pcx = Math.round(playerPos.x / CHUNK_SIZE);
+            const pcz = Math.round(playerPos.z / CHUNK_SIZE);
 
             // Ensure 3x3 window around player
             for (let dx = -1; dx <= 1; dx++) {

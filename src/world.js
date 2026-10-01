@@ -522,10 +522,6 @@ export function generateAlpine(seed, theme) {
     { id: "alp-4", x: 1.2, z: 1.2, control: "none", offset: 0, neighbors: [] },
     { id: "alp-5", x: 3.6, z: 3.6, control: "none", offset: 0, neighbors: [] },
     { id: "alp-6", x: 6.0, z: 6.0, control: "none", offset: 0, neighbors: [] },
-    // Scenic Chalet & Campfire Spur loop:
-    { id: "alp-spur-chalet", x: 4.2, z: 1.0, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-spur-campfire", x: 4.8, z: -1.8, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-spur-windmill", x: 2.2, z: -3.2, control: "none", offset: 0, neighbors: [] },
   ];
 
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
@@ -554,13 +550,6 @@ export function generateAlpine(seed, theme) {
   link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau", 1.4);
   link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit", 1.4);
 
-  // Scenic Chalet Terrace Loop
-  link("alp-4", "alp-spur-windmill", "Windmill Vista Lane", 1.0);
-  link("alp-spur-windmill", "alp-spur-campfire", "Lookout Ridge Trail", 1.0);
-  link("alp-spur-campfire", "alp-spur-chalet", "Chalet Bellevue Way", 1.0);
-  link("alp-spur-chalet", "alp-5", "Plateau Connector", 1.0);
-  link("alp-spur-chalet", "alp-4", "Bellevue Terrace", 1.0);
-
   const objects = [];
   const world = {
     seed,
@@ -579,7 +568,7 @@ export function generateAlpine(seed, theme) {
     alpineLegCount: 0,
   };
 
-  world.route = makeRoute(world, [
+  const routeIds = [
     "alp-0",
     "alp-1",
     "alp-2",
@@ -587,7 +576,20 @@ export function generateAlpine(seed, theme) {
     "alp-4",
     "alp-5",
     "alp-6",
-  ]);
+  ];
+
+  // Pre-generate initial scenic legs extending out into surrounding alpine chunks
+  let curDestNode = world.byId["alp-6"];
+  for (let l = 1; l <= 3; l++) {
+    const ext = extendAlpineWorld(world, curDestNode, Math.random, l % 2 === 0 ? "right" : "left");
+    if (ext && ext.pathIds) {
+      routeIds.push(...ext.pathIds.slice(1));
+      curDestNode = world.byId[ext.destinationId];
+      world.destination = ext.destinationId;
+    }
+  }
+
+  world.route = makeRoute(world, routeIds);
 
   return world;
 }

@@ -217,7 +217,7 @@ export class Simulation {
       ids = (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id);
     } else if (alpine) {
       if (i === 1) {
-        ids = ["alp-spur-windmill", "alp-spur-campfire", "alp-spur-chalet", "alp-5"];
+        ids = ["alp-1", "alp-2", "alp-3", "alp-4", "alp-5"];
       } else if (i === 2) {
         ids = ["alp-3", "alp-4", "alp-5", "alp-6"];
       } else {

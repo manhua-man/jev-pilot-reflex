@@ -1537,7 +1537,7 @@ export class DriveScene {
 
         // Floating badge text
         if (m.userData.badgeObj) {
-          const badgeText = `${agent.name.split(" ")[0]} · ${agent.statusText}`;
+          const badgeText = `${(agent.name || "NPC").split(" ")[0]} · ${agent.statusText || ""}`;
           updateBadgeTexture(m.userData.badgeObj, badgeText, agent.role);
         }
       }

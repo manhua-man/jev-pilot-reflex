@@ -504,17 +504,20 @@ export class GameTrafficManager {
   evaluatePayoffMatrix(player) {
     const adversary = this.agents.find(a => a.role === "cut_in" || a.state?.includes("cut_in")) || this.agents[0];
     if (!adversary) {
+      const defAction = { id: "keep_lane", name: "保持车道·平稳巡航", jSafe: 98, jEff: 95, jComf: 98, expectedU: 97.2, status: "标称均衡" };
       return {
-        matrix: [
-          { id: "keep_lane", name: "保持车道·平稳巡航", jSafe: 98, jEff: 95, jComf: 98, expectedU: 97.2, status: "标称均衡" },
+        adversary: { id: "none", name: "巡航背景车", role: "cruising", statusText: "正常通行", gap: 30, lateralGap: 0, ttc: 9.9, pCommit: 0 },
+        rows: [
+          defAction,
           { id: "left_evade", name: "微幅左避让 (0.4m)", jSafe: 95, jEff: 92, jComf: 90, expectedU: 93.3, status: "路况安全" },
           { id: "speed_up", name: "提速封堵加塞 (封死路权)", jSafe: 90, jEff: 99, jComf: 88, expectedU: 92.2, status: "路况畅通" },
           { id: "defensive_yield", name: "纳什防御礼让 (主动减速)", jSafe: 99, jEff: 80, jComf: 92, expectedU: 92.5, status: "从容跟车" },
           { id: "emergency_brake", name: "物理底线紧急制动 (-8.5m/s²)", jSafe: 99, jEff: 10, jComf: 15, expectedU: 59.8, status: "非必要制动" },
         ],
-        bestAction: "keep_lane",
+        bestAction: defAction,
         pCommit: 0.0,
         pYield: 1.0,
+        decisionRationale: "路况畅通，Reflex 保持 [平稳巡航] (期望收益 97.2)，多车博弈流处于稳定态。",
       };
     }
     const friction = this.sim.roadFriction || 0.9;
