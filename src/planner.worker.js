@@ -21,6 +21,11 @@ self.onmessage = ({ data }) => {
     if (snapshot.agents) {
       simulation.gameManager = { agents: snapshot.agents };
     }
+    if (snapshot.worldNodes && (!simulation.world.nodes || simulation.world.nodes.length !== snapshot.worldNodes.length)) {
+      simulation.world.nodes = snapshot.worldNodes;
+      simulation.world.edges = snapshot.worldEdges;
+      simulation.world.byId = Object.fromEntries(snapshot.worldNodes.map((n) => [n.id, n]));
+    }
     simulation.world.route = simulation.player.route;
     if (kind === "reroute") {
       self.postMessage({

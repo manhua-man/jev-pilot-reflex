@@ -460,8 +460,15 @@ export class Simulation {
         reason: "Clear road",
         color: null,
       };
-    const node = this.world.byId[c.nodeId],
-      delta = c.stopS - v.s,
+    const node = this.world.byId[c.nodeId];
+    if (!node)
+      return {
+        mustStop: false,
+        distance: Infinity,
+        reason: "Clear road",
+        color: null,
+      };
+    const delta = c.stopS - v.s,
       signal =
         node.control === "signal"
           ? signalState(node, this.time, c.approach)
@@ -939,6 +946,7 @@ export class Simulation {
     for (const c of v.route.crossings) {
       if (old.s < c.stopS && v.s >= c.stopS && near.distance < 4) {
         const node = this.world.byId[c.nodeId];
+        if (!node) continue;
         if (
           node.control === "signal"
             ? signalState(node, this.time, c.approach).color === "red"
@@ -1510,7 +1518,7 @@ export class Simulation {
         intersection: control
           ? {
               node_id: control.nodeId,
-              control: this.world.byId[control.nodeId].control,
+              control: this.world.byId[control.nodeId]?.control || "none",
               signal: seenControl ? env.rule.color : null,
               visible: !!seenControl,
               stop_line_ahead_m: round(

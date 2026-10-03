@@ -119,11 +119,14 @@ function animatePath(car, candidate, target, animation, dt, paused) {
         : p.ahead,
     };
   });
-  const sin = Math.sin(car.heading),
-    cos = Math.cos(car.heading);
+  const carH = Number.isFinite(car.heading) ? car.heading : 0;
+  const sin = Math.sin(carH),
+    cos = Math.cos(carH);
+  const carX = Number.isFinite(car.x) ? car.x : 0;
+  const carZ = Number.isFinite(car.z) ? car.z : 0;
   return animation.points.map((p) => ({
-    x: car.x + p.right * cos + p.ahead * sin,
-    z: car.z + p.right * sin - p.ahead * cos,
+    x: carX + p.right * cos + p.ahead * sin,
+    z: carZ + p.right * sin - p.ahead * cos,
   }));
 }
 

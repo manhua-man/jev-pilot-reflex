@@ -179,7 +179,7 @@ export function createDrivingPlan(
     : null;
   const approachingControl =
     crossing &&
-    ["stop", "signal"].includes(world.byId[crossing.nodeId].control) &&
+    ["stop", "signal"].includes(world.byId[crossing.nodeId]?.control) &&
     crossing.stopS - near.s > -car.depth &&
     crossing.stopS - near.s < 100;
   const requiresStop =
@@ -187,9 +187,9 @@ export function createDrivingPlan(
     approachingControl &&
     control &&
     control.distance >= -0.7 &&
-    ((world.byId[crossing.nodeId].control === "stop" &&
+    (((world.byId[crossing.nodeId]?.control || "none") === "stop" &&
       !control.stopCompleted) ||
-      (world.byId[crossing.nodeId].control === "signal" &&
+      ((world.byId[crossing.nodeId]?.control || "none") === "signal" &&
         ["red", "amber"].includes(control.color)));
   const maxSpeed = recovering
     ? 2
@@ -209,7 +209,7 @@ export function createDrivingPlan(
   const queue =
     lead &&
     crossing &&
-    ["stop", "signal"].includes(world.byId[crossing.nodeId].control) &&
+    ["stop", "signal"].includes(world.byId[crossing.nodeId]?.control) &&
     crossing.stopS - near.s > -3 &&
     crossing.stopS - near.s < 90 &&
     lead.gap < 45 &&

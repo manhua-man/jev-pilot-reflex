@@ -61,6 +61,8 @@ export class BackgroundPlanner {
       offRouteSince: sim.offRouteSince,
       lastReroute: sim.lastReroute,
       routeHoldUntil: sim.routeHoldUntil,
+      worldNodes: sim.world.nodes,
+      worldEdges: sim.world.edges,
     };
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {

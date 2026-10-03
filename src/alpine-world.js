@@ -2887,7 +2887,7 @@ export class AlpinePassage {
         this.time = (this.time || 0) + dt;
 
         // Dynamic Chunk Streaming around player
-        if (playerPos) {
+        if (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.z)) {
             const CHUNK_SIZE = 15.0;
             const pcx = Math.round(playerPos.x / CHUNK_SIZE);
             const pcz = Math.round(playerPos.z / CHUNK_SIZE);

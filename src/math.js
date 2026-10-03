@@ -93,16 +93,19 @@ export function pointAt(points, s) {
   };
 }
 export function samplePolyline(raw, spacing = 1) {
-  const pts = [{ ...raw[0], s: 0 }];
+  if (!raw || raw.length === 0) return [];
+  const h0 = raw.length > 1 ? heading(raw[0], raw[1]) : 0;
+  const pts = [{ ...raw[0], s: 0, heading: h0 }];
   let s = 0;
   for (let i = 1; i < raw.length; i++) {
     const a = raw[i - 1],
       b = raw[i],
       d = dist(a, b),
+      h = heading(a, b),
       n = Math.max(1, Math.ceil(d / spacing));
     for (let k = 1; k <= n; k++) {
       s += d / n;
-      pts.push({ x: mix(a.x, b.x, k / n), z: mix(a.z, b.z, k / n), s });
+      pts.push({ x: mix(a.x, b.x, k / n), z: mix(a.z, b.z, k / n), s, heading: h });
     }
   }
   return pts;
