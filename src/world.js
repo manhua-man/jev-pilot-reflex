@@ -521,7 +521,8 @@ export function generateAlpine(seed, theme) {
     { id: "alp-3", x: -0.72, z: -0.72, control: "none", offset: 0, neighbors: [] },
     { id: "alp-4", x: 1.2, z: 1.2, control: "none", offset: 0, neighbors: [] },
     { id: "alp-5", x: 3.6, z: 3.6, control: "none", offset: 0, neighbors: [] },
-    { id: "alp-6", x: 6.0, z: 6.0, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-6", x: 5.6, z: 5.6, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-7", x: 7.5, z: 7.5, control: "none", offset: 0, neighbors: [] },
   ];
 
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
@@ -549,6 +550,7 @@ export function generateAlpine(seed, theme) {
   link("alp-3", "alp-4", "Alpine Pass · Stone Arch Bridge", 1.4);
   link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau", 1.4);
   link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit", 1.4);
+  link("alp-6", "alp-7", "Alpine Pass · Boundary Crossing", 1.4);
 
   const objects = [];
   const world = {
@@ -564,7 +566,7 @@ export function generateAlpine(seed, theme) {
     bounds: { minX: -8.0, maxX: 8.0, minZ: -8.0, maxZ: 8.0 },
     startNode: "alp-0",
     nextNode: "alp-1",
-    destination: "alp-6",
+    destination: "alp-7",
     alpineLegCount: 0,
   };
 
@@ -576,10 +578,11 @@ export function generateAlpine(seed, theme) {
     "alp-4",
     "alp-5",
     "alp-6",
+    "alp-7",
   ];
 
   // Pre-generate initial scenic legs extending out into surrounding alpine chunks
-  let curDestNode = world.byId["alp-6"];
+  let curDestNode = world.byId["alp-7"];
   for (let l = 1; l <= 3; l++) {
     const ext = extendAlpineWorld(world, curDestNode, Math.random, l % 2 === 0 ? "right" : "left");
     if (ext && ext.pathIds) {

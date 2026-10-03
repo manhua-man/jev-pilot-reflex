@@ -216,24 +216,12 @@ export class Simulation {
     if (highway) {
       ids = (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id);
     } else if (alpine) {
-      if (i === 1 && !distant) {
-        ids = ["alp-1", "alp-2", "alp-3", "alp-4", "alp-5"];
-      } else if (i === 2 && !distant) {
-        ids = ["alp-3", "alp-4", "alp-5", "alp-6"];
+      if (this.world.route && this.world.route.ids && this.world.route.ids.length >= 6) {
+        const wIds = this.world.route.ids;
+        const startIdx = Math.min(wIds.length - 4, Math.max(1, ((i % 4) + 1) * 2));
+        ids = wIds.slice(startIdx);
       } else {
-        const pool = this.world.nodes.filter(n => n.id !== "alp-0" && (distant && this.player ? dist(n, this.player) < 55 && dist(n, this.player) > 6 : true));
-        const nonStartNodes = pool.length >= 2 ? pool : this.world.nodes.filter(n => n.id !== "alp-0");
-        const startNode = choose(this.r, nonStartNodes.length ? nonStartNodes : this.world.nodes);
-        const candidates = this.world.nodes.filter(n => n.id !== startNode.id && n.id !== "alp-0" && dist(n, startNode) > 3.0);
-        const endNode = candidates.length ? choose(this.r, candidates) : startNode;
-        try {
-          ids = shortestPath(this.world, startNode.id, endNode.id);
-        } catch {
-          ids = [startNode.id];
-        }
-        if (ids.length < 2) {
-          ids = ["alp-2", "alp-3", "alp-4", "alp-5", "alp-6"];
-        }
+        ids = ["alp-1", "alp-2", "alp-3", "alp-4", "alp-5", "alp-6", "alp-7"];
       }
     } else {
       let a = choose(this.r, nodes),
@@ -307,7 +295,7 @@ export class Simulation {
       x: p.x,
       z: p.z,
       heading: heading(p, next),
-      speed: 0,
+      speed: alpine ? 3.5 + this.r() * 1.5 : 0,
       s,
       route,
       stops: {},
@@ -332,13 +320,16 @@ export class Simulation {
     const lastNode = this.world.byId[ids.at(-1)];
     if (!lastNode) return;
     if (this.world.type === "alpine") {
-      if (lastNode.id === "alp-0") {
+      if (lastNode.id === "alp-0" || dist(v, this.player) > 45) {
         this.spawnTraffic(Number(v.id.split("-")[1]), true);
         return;
       }
       const forward = lastNode.neighbors.filter((id) => id !== ids.at(-2));
       const nextId = choose(this.r, forward.length ? forward : lastNode.neighbors);
-      if (!nextId) return;
+      if (!nextId) {
+        this.spawnTraffic(Number(v.id.split("-")[1]), true);
+        return;
+      }
       ids.push(nextId);
       try {
         const route = makeRoute(this.world, ids);
@@ -347,8 +338,12 @@ export class Simulation {
           v.route = route;
           v.s = near.s;
           v.stops = {};
+        } else {
+          this.spawnTraffic(Number(v.id.split("-")[1]), true);
         }
-      } catch {}
+      } catch {
+        this.spawnTraffic(Number(v.id.split("-")[1]), true);
+      }
       return;
     }
     // Rebuild from the current final road segment, before its junction enters
@@ -609,9 +604,8 @@ export class Simulation {
     // the real-time guard still checks whichever maneuver Jev actually selects.
     const planningMax = max;
     const conflict =
-      (v === this.player || this.world.type === "alpine")
+      v === this.player
         ? predictTrafficConflict(v, [
-            ...(v === this.player ? [] : [this.player]),
             ...this.traffic.filter((o) => o.id !== v.id),
             ...this.pedestrians,
             ...(this.gameManager?.agents || []),
@@ -672,6 +666,56 @@ export class Simulation {
         }
         continue;
       }
+      if (this.world.type === "alpine") {
+        if (!p.walkPath) continue;
+        p.progress += dt * (p.speed || 0.6) * p.direction;
+        if (p.progress > p.walkPath.length || p.progress < 0) {
+          p.progress = clamp(p.progress, 0, p.walkPath.length);
+          p.direction *= -1;
+        }
+        const position = move(p.walkPath.start, p.walkPath.heading, p.progress);
+        p.x = position.x;
+        p.z = position.z;
+        p.walking = true;
+        p.heading = angle(p.walkPath.heading + (p.direction < 0 ? Math.PI : 0));
+
+        if (!p.isJaywalker && dist(p, this.player) > 45) {
+          const nearEdges = this.world.edges.filter((e) => {
+            const a = this.world.byId[e.a], b = this.world.byId[e.b];
+            if (!a || !b) return false;
+            const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
+            const d = Math.hypot(midX - this.player.x, midZ - this.player.z);
+            return d > 8 && d < 45;
+          });
+          if (nearEdges.length > 0) {
+            const edge = choose(this.r, nearEdges);
+            const a = this.world.byId[edge.a], b = this.world.byId[edge.b];
+            const hEdge = heading(a, b);
+            const len = dist(a, b);
+            const isCrossing = this.r() < 0.35;
+            const side = this.r() < 0.5 ? -1 : 1;
+            const offsetDist = isCrossing ? 0 : 0.95 * side;
+            const pathStart = move(move(a, hEdge, 0.4), hEdge + Math.PI / 2, offsetDist);
+            const progress = isCrossing ? 0 : this.r() * Math.max(0.4, len - 0.8);
+            const position = isCrossing
+              ? move(move(a, hEdge, len * 0.5), hEdge + Math.PI / 2, -1.2)
+              : move(pathStart, hEdge, progress);
+            const walkHeading = isCrossing ? (hEdge + Math.PI / 2) : hEdge;
+            p.x = position.x;
+            p.z = position.z;
+            p.progress = progress;
+            p.crossing = isCrossing;
+            p.subtype = isCrossing ? "hiker_cross" : (this.r() < 0.5 ? "hiker" : "villager");
+            p.walkPath = {
+              start: isCrossing ? position : pathStart,
+              heading: walkHeading,
+              length: isCrossing ? 2.4 : len,
+            };
+            p.direction = this.r() > 0.5 ? 1 : -1;
+          }
+        }
+        continue;
+      }
       const node = this.world.byId[p.nodeId],
         walk = signalState(node, this.time, 0).walk;
       if (p.crossing) {
@@ -707,42 +751,6 @@ export class Simulation {
         p.walking = true;
         p.speed = 0.9;
         p.heading = angle(p.walkPath.heading + (p.direction < 0 ? Math.PI : 0));
-
-        if (this.world.type === "alpine" && !p.isJaywalker && dist(p, this.player) > 45) {
-          const nearEdges = this.world.edges.filter((e) => {
-            const a = this.world.byId[e.a], b = this.world.byId[e.b];
-            if (!a || !b) return false;
-            const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
-            const d = Math.hypot(midX - this.player.x, midZ - this.player.z);
-            return d > 8 && d < 45;
-          });
-          if (nearEdges.length > 0) {
-            const edge = choose(this.r, nearEdges);
-            const a = this.world.byId[edge.a], b = this.world.byId[edge.b];
-            const hEdge = heading(a, b);
-            const len = dist(a, b);
-            const isCrossing = this.r() < 0.35;
-            const side = this.r() < 0.5 ? -1 : 1;
-            const offsetDist = isCrossing ? 0 : 0.95 * side;
-            const pathStart = move(move(a, hEdge, 0.4), hEdge + Math.PI / 2, offsetDist);
-            const progress = isCrossing ? 0 : this.r() * Math.max(0.4, len - 0.8);
-            const position = isCrossing
-              ? move(move(a, hEdge, len * 0.5), hEdge + Math.PI / 2, -1.2)
-              : move(pathStart, hEdge, progress);
-            const walkHeading = isCrossing ? (hEdge + Math.PI / 2) : hEdge;
-            p.x = position.x;
-            p.z = position.z;
-            p.progress = progress;
-            p.crossing = isCrossing;
-            p.subtype = isCrossing ? "hiker_cross" : (this.r() < 0.5 ? "hiker" : "villager");
-            p.walkPath = {
-              start: isCrossing ? position : pathStart,
-              heading: walkHeading,
-              length: isCrossing ? 2.4 : len,
-            };
-            p.direction = this.r() > 0.5 ? 1 : -1;
-          }
-        }
       }
     }
     updateCourtesy(this);

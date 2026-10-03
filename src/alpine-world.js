@@ -126,6 +126,24 @@ function createSafeCanvas(w = 256, h = 256) {
             return Math.abs(-x * ROAD_DIR_Z + z * ROAD_DIR_X);
         }
 
+        function getMinRoadDist(x, z, world = null) {
+            let minDist = getLateralRoadDist(x, z);
+            if (world && world.edges && world.byId) {
+                for (const e of world.edges) {
+                    const a = world.byId[e.a], b = world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
+                    const px = a.x + t * dx, pz = a.z + t * dz;
+                    const d = Math.hypot(x - px, z - pz);
+                    if (d < minDist) minDist = d;
+                }
+            }
+            return minDist;
+        }
+
         function getStreamMetrics(x, z) {
             let closest = Infinity, progress = 0;
             for (let i = 0; i < STREAM_POINTS.length - 1; i++) {
@@ -169,7 +187,7 @@ function createSafeCanvas(w = 256, h = 256) {
             return h;
         }
 
-        function getGenesisDioramaHeight(x, z) {
+        function getGenesisDioramaHeight(x, z, world = null) {
             let h = BASE_HEIGHT;
             h += mountainHeight(x, z);
             h += valueNoise(x * 0.8, z * 0.8) * 0.35 + valueNoise(x * 0.3, z * 0.3) * 0.5;
@@ -178,7 +196,7 @@ function createSafeCanvas(w = 256, h = 256) {
             const streamDist = stream.distance;
             if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
 
-            const latDist = getLateralRoadDist(x, z);
+            const latDist = getMinRoadDist(x, z, world);
             const roadShoulder = ROAD_WIDTH / 2 + 0.6;
             if (latDist < roadShoulder) {
                 const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
@@ -204,7 +222,7 @@ function createSafeCanvas(w = 256, h = 256) {
         function getContinuousAlpineHeight(x, z, world = null) {
             const inGenesis = Math.abs(x) <= 7.5 && Math.abs(z) <= 7.5;
             if (inGenesis) {
-                return getGenesisDioramaHeight(x, z);
+                return getGenesisDioramaHeight(x, z, world);
             }
 
             // Procedural terrain: continuous multi-octave mountain ridges & valleys
@@ -221,7 +239,7 @@ function createSafeCanvas(w = 256, h = 256) {
             if (dEdge < 3.5) {
                 const blend = clamp(dEdge / 3.5, 0, 1);
                 const sBlend = blend * blend * (3 - 2 * blend);
-                const genH = getGenesisDioramaHeight(x, z);
+                const genH = getGenesisDioramaHeight(x, z, world);
                 h = lerp(genH, h, sBlend);
             }
 
@@ -2674,13 +2692,6 @@ class AlpineChunk {
             const a = this.world.byId[e.a], b = this.world.byId[e.b];
             if (!a || !b) continue;
 
-            // In Genesis chunk, skip main diagonal pass (alp-0 .. alp-6) as it is shaded into diorama terrain + bridge
-            if (isGenesis) {
-                const isMainPass = (e.a.startsWith("alp-") && !e.a.includes("spur") && !e.a.includes("-hp-") && !e.a.includes("-fk-") && !e.a.includes("-rb-") && !e.a.includes("-vd-") && !e.a.includes("-vg-")) &&
-                                   (e.b.startsWith("alp-") && !e.b.includes("spur") && !e.b.includes("-hp-") && !e.b.includes("-fk-") && !e.b.includes("-rb-") && !e.b.includes("-vd-") && !e.b.includes("-vg-"));
-                if (isMainPass) continue;
-            }
-
             const edgeMinX = Math.min(a.x, b.x), edgeMaxX = Math.max(a.x, b.x);
             const edgeMinZ = Math.min(a.z, b.z), edgeMaxZ = Math.max(a.z, b.z);
             if (edgeMaxX < minX - 1.5 || edgeMinX > maxX + 1.5 || edgeMaxZ < minZ - 1.5 || edgeMinZ > maxZ + 1.5) continue;
@@ -2707,8 +2718,9 @@ class AlpineChunk {
                     continue;
                 }
 
-                // If inside genesis core area for main diorama, let diorama terrain shine
-                if (!isGenesis && Math.abs(p0.x) < 7.4 && Math.abs(p0.z) < 7.4 && Math.abs(p1.x) < 7.4 && Math.abs(p1.z) < 7.4) {
+                // In Genesis chunk, skip stone bridge deck so stone bridge structure remains visible
+                const pBridgeDist = Math.hypot(midSegX - (-0.72), midSegZ - (-0.72));
+                if (isGenesis && pBridgeDist < 1.1) {
                     continue;
                 }
 
@@ -2737,13 +2749,13 @@ class AlpineChunk {
                 pushQuad(asphaltPos, asphaltNorm, LA, CA, LB, CB);
                 pushQuad(asphaltPos, asphaltNorm, CA, RA, CB, RB);
 
-                // 2. Road side skirts (3.5cm downward edge so road never floats on steep slopes)
-                const LA_bot = { x: LA.x, y: yLA - 0.035, z: LA.z };
-                const LB_bot = { x: LB.x, y: yLB - 0.035, z: LB.z };
+                // 2. Road side skirts (15cm downward edge so road never floats on steep slopes)
+                const LA_bot = { x: LA.x, y: yLA - 0.15, z: LA.z };
+                const LB_bot = { x: LB.x, y: yLB - 0.15, z: LB.z };
                 pushQuad(asphaltPos, asphaltNorm, LB, LA, LB_bot, LA_bot);
 
-                const RA_bot = { x: RA.x, y: yRA - 0.035, z: RA.z };
-                const RB_bot = { x: RB.x, y: yRB - 0.035, z: RB.z };
+                const RA_bot = { x: RA.x, y: yRA - 0.15, z: RA.z };
+                const RB_bot = { x: RB.x, y: yRB - 0.15, z: RB.z };
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
                 // 3. Dashed yellow center line (0.8m period, 0.04m width)
