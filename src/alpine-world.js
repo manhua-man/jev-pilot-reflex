@@ -4,7 +4,7 @@ import { U, patchMaterial, GLSL_NOISE, SHARED_DECL, HEIGHT_FOG_CODE } from './se
 import { dist, heading, move } from './math.js';
 
 const QUALITY = {
-    GRASS_COUNT: 4500,
+    GRASS_COUNT: 13000,
     SHADOW_MAP_SIZE: 2048,
     MAX_PIXEL_RATIO: 1.5,
     USE_BLOOM: true,
@@ -2387,24 +2387,59 @@ let _sharedYellowMat = null;
 let _sharedWhiteMat = null;
 function getSharedRoadMaterials() {
     if (!_sharedAsphaltMat) {
-        _sharedAsphaltMat = new THREE.MeshStandardMaterial({
-            color: 0x24272c,
-            roughness: 0.85,
-            metalness: 0.05,
-            flatShading: false,
-        });
-        _sharedYellowMat = new THREE.MeshStandardMaterial({
-            color: 0xf59e0b,
-            roughness: 0.45,
-            metalness: 0.08,
-            emissive: 0x7c3a00,
-            emissiveIntensity: 0.15,
-        });
-        _sharedWhiteMat = new THREE.MeshStandardMaterial({
-            color: 0xe2e8f0,
-            roughness: 0.45,
-            metalness: 0.08,
-        });
+        _sharedAsphaltMat = patchMaterial(
+            new THREE.MeshStandardMaterial({
+                color: 0x22262a,
+                roughness: 0.85,
+                metalness: 0.05,
+                flatShading: false,
+            }),
+            {
+                key: 'alpine-road-asphalt',
+                worldPos: true,
+                worldNormal: true,
+                fragmentColor: /* glsl */`
+                    vec2 snWpXz = vWPos.xz;
+                    float sdN = sn_noise(snWpXz * 3.1) * 0.6 + sn_noise(snWpXz * 9.0) * 0.4;
+                    float sd = uSnowCoverage * 0.85 * smoothstep(0.38, 0.78, vWNrm.y + (sdN - 0.5) * 0.5);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.96), sd);
+                `,
+                fragmentRoughness: /* glsl */`
+                    float snWet = uWetness + uSnowCoverage * 0.5;
+                    roughnessFactor = mix(roughnessFactor, 0.26, clamp(snWet, 0.0, 1.0));
+                `
+            }
+        );
+        _sharedYellowMat = patchMaterial(
+            new THREE.MeshStandardMaterial({
+                color: 0xf59e0b,
+                roughness: 0.45,
+                metalness: 0.08,
+                emissive: 0xcc7000,
+                emissiveIntensity: 0.35,
+            }),
+            {
+                key: 'alpine-road-yellow',
+                worldPos: true,
+                worldNormal: true,
+                fragmentColor: snowDustCode('0.7')
+            }
+        );
+        _sharedWhiteMat = patchMaterial(
+            new THREE.MeshStandardMaterial({
+                color: 0xf1f5f9,
+                roughness: 0.45,
+                metalness: 0.08,
+                emissive: 0xd8e2ec,
+                emissiveIntensity: 0.25,
+            }),
+            {
+                key: 'alpine-road-white',
+                worldPos: true,
+                worldNormal: true,
+                fragmentColor: snowDustCode('0.7')
+            }
+        );
     }
     return { asphaltMat: _sharedAsphaltMat, yellowMat: _sharedYellowMat, whiteMat: _sharedWhiteMat };
 }
@@ -2425,6 +2460,74 @@ function isNearOtherRoadEdge(x, z, ignoreEdgeId, world) {
         }
     }
     return false;
+}
+
+let _sharedGrassGeo = null;
+function getSharedGrassGeometry() {
+    if (!_sharedGrassGeo) {
+        const w = 0.08, h = 0.55;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+            -w, 0, 0, w, 0, 0,
+            -w * 0.8, h * 0.3, 0.02, w * 0.8, h * 0.3, 0.02,
+            -w * 0.5, h * 0.7, 0.08, w * 0.5, h * 0.7, 0.08,
+            0, h, 0.16
+        ]), 3));
+        geo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+            0, 1, 0.2, 0, 1, 0.2, 0, 1, 0.2, 0, 1, 0.2, 0, 1, 0.3, 0, 1, 0.3, 0, 1, 0.4
+        ]), 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 0.3, 1, 0.3, 0, 0.7, 1, 0.7, 0.5, 1]), 2));
+        geo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6]);
+        _sharedGrassGeo = geo;
+    }
+    return _sharedGrassGeo;
+}
+
+let _sharedGrassMat = null;
+function getSharedGrassMaterial() {
+    if (!_sharedGrassMat) {
+        _sharedGrassMat = patchMaterial(
+            new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.0, side: THREE.DoubleSide }),
+            {
+                key: 'grass',
+                worldPos: true,
+                vertexPars: 'attribute vec4 aGrass; varying float vGrassH; varying float vGust; varying float vTint;\n' + LOCAL_WIND,
+                vertexBegin: /* glsl */`
+                    float hN = clamp(position.y / 0.55, 0.0, 1.0);
+                    vGrassH = hN;
+                    vTint = aGrass.y;
+                    float wMul = aGrass.x < 0.5 ? 1.0 : (aGrass.x < 1.5 ? 1.75 : 0.6);
+                    float hMul = aGrass.x < 0.5 ? 1.0 : (aGrass.x < 1.5 ? 0.62 : 1.3);
+                    transformed.x *= wMul * (1.0 - hN * 0.15);
+                    transformed.y *= hMul * uGrassHeight;
+                    transformed.z *= hMul * (aGrass.x > 1.5 ? 1.6 : 1.0);
+                    transformed.y -= (1.0 - uGrassHeight) * 0.04;
+                    vec3 origin = instanceOrigin();
+                    float gust = gustAt(origin.xz);
+                    vGust = gust;
+                    float sway = sin(uWindTime * 2.1 + origin.x * 0.9 + origin.z * 0.7 + aGrass.w * 6.28) * 0.12;
+                    float stiff = mix(1.0, 0.35, uSnowCoverage);
+                    float bend = pow(hN, 1.7) * hMul * stiff;
+                    vec2 wind = uWindDir * (sway + gust * 0.6 + 0.1) * bend * 0.3;
+                    transformed += toLocal(vec3(wind.x, -abs(gust) * bend * 0.05, wind.y));
+                `,
+                fragmentPars: 'varying float vGrassH; varying float vGust; varying float vTint;',
+                diffuse: /* glsl */`
+                    vec3 gBase = uGrassBase * (0.8 + vTint * 0.4);
+                    vec3 gTip = uGrassTip * (0.85 + (1.0 - vTint) * 0.3);
+                    float gH = clamp(vGrassH, 0.0, 1.0);
+                    vec3 grassCol = mix(gBase, gTip, pow(gH, 0.85));
+                    grassCol = mix(grassCol, vec3(0.75, 0.28, 0.04), uSeasonW.z * step(0.8, vTint) * gH);
+                    grassCol = mix(grassCol, vec3(0.45, 0.8, 0.12), uSeasonW.x * step(0.8, vTint) * vGrassH * 0.6);
+                    grassCol += vec3(0.08, 0.09, 0.05) * vGust * vGrassH * (1.0 - uNight * 0.7);
+                    grassCol = mix(grassCol, vec3(0.82, 0.87, 0.9), uSnowCoverage * (1.0 - vGrassH) * 0.85);
+                    vec4 diffuseColor = vec4(grassCol, opacity);
+                `,
+                fragmentNormal: 'normal = normalize(vNormal);'
+            }
+        );
+    }
+    return _sharedGrassMat;
 }
 
 class AlpineChunk {
@@ -2469,6 +2572,7 @@ class AlpineChunk {
         } else {
             // Procedural mountain tile
             this.buildSurface();
+            this.buildGrass();
             this.buildScenery();
             this.buildRoads();
         }
@@ -2540,6 +2644,11 @@ class AlpineChunk {
                 col.lerp(tmp, scree * 0.85);
                 if (dirt) col.lerp(cDirt, 1 - rock);
 
+                // Baked concavity AO
+                const lap = (hAt(ix + 1, iz) + hAt(ix - 1, iz) + hAt(ix, iz + 1) + hAt(ix, iz - 1)) / 4 - h;
+                const ao = clamp(1 - Math.max(lap, 0) * 4.5, 0.5, 1) * (0.9 + 0.1 * clamp(1 - Math.max(-lap, 0) * 2, 0, 1) + 0.1 * smoothstep(-lap, 0, 0.05));
+                col.multiplyScalar(clamp(ao, 0.5, 1.05));
+
                 colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
                 const meadow = clamp(1 - rock - scree * 0.8 - dirt, 0, 1);
                 mats[i * 3] = meadow; mats[i * 3 + 1] = rock; mats[i * 3 + 2] = dirt;
@@ -2558,25 +2667,78 @@ class AlpineChunk {
         this.surfaceMesh = mesh;
     }
 
+    buildGrass() {
+        const baseGeo = getSharedGrassGeometry();
+        const geo = baseGeo.clone();
+        const mat = getSharedGrassMaterial();
+        const count = 2200;
+        const mesh = new THREE.InstancedMesh(geo, mat, count);
+        const attr = new Float32Array(count * 4);
+        const CHUNK_SIZE = 15.0;
+        const ox = (this.cx - 0.5) * CHUNK_SIZE;
+        const oz = (this.cz - 0.5) * CHUNK_SIZE;
+        let placed = 0;
+        for (let tries = 0; tries < count * 4 && placed < count; tries++) {
+            const rx = ox + rand() * CHUNK_SIZE;
+            const rz = oz + rand() * CHUNK_SIZE;
+            const h = getContinuousAlpineHeight(rx, rz, this.world);
+            if (h > 2.8 || h < 0.1) continue;
+            let nearRoad = false;
+            if (this.world && this.world.edges && this.world.byId) {
+                for (const e of this.world.edges) {
+                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
+                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 0.38) {
+                        nearRoad = true;
+                        break;
+                    }
+                }
+            }
+            if (nearRoad) continue;
+            _obj.position.set(rx, h - 0.02, rz);
+            _obj.rotation.set((rand() - 0.5) * 0.14, rand() * Math.PI * 2, (rand() - 0.5) * 0.14);
+            _obj.scale.setScalar(0.34 + rand() * 0.46);
+            _obj.updateMatrix();
+            mesh.setMatrixAt(placed, _obj.matrix);
+            const r = rand();
+            attr[placed * 4] = r < 0.55 ? 0 : r < 0.82 ? 1 : 2;
+            attr[placed * 4 + 1] = rand();
+            attr[placed * 4 + 3] = rand();
+            placed++;
+        }
+        mesh.count = placed;
+        geo.setAttribute('aGrass', new THREE.InstancedBufferAttribute(attr, 4));
+        mesh.receiveShadow = true;
+        mesh.castShadow = false;
+        mesh.frustumCulled = false;
+        this.group.add(mesh);
+    }
+
     buildScenery() {
         const CHUNK_SIZE = 15.0;
         const ox = (this.cx - 0.5) * CHUNK_SIZE;
         const oz = (this.cz - 0.5) * CHUNK_SIZE;
 
         const batch = new StaticBatch();
-        const trunkMat = stdMat(0x4a2f20, 0.9);
-        const needleMat = stdMat(0x1f4a2c, 0.85);
-        const birchTrunk = stdMat(0xd8d4cd, 0.85);
-        const birchLeaves = stdMat(0x6b8e23, 0.85);
-        const stoneMat = stdMat(0x6e6862, 0.9);
-        const woodRail = stdMat(0x6b4f3a, 0.9);
+        const dusted = (color) => patchMaterial(stdMat(color, 0.9), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
+        const stoneMat = dusted(0x6e6862);
+        const woodRail = patchMaterial(stdMat(0x6b4f3a, 0.9), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
+        const trunkMat = patchMaterial(stdMat(0x4a2f20, 0.9), { key: 'trunk-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
+        const needleMat = patchMaterial(stdMat(0x1f4a2c, 0.85), { key: 'needle-dusted', worldNormal: true, fragmentColor: snowDustCode('0.95') });
+        const birchTrunk = patchMaterial(stdMat(0xd8d4cd, 0.85), { key: 'birch-trunk', worldNormal: true, fragmentColor: snowDustCode('0.8') });
+        const birchLeaves = patchMaterial(stdMat(0x6b8e23, 0.85), { key: 'birch-leaves', worldNormal: true, fragmentColor: snowDustCode('0.85') });
 
-        // Instanced vegetation
-        for (let k = 0; k < 12; k++) {
-            const rx = ox + 1.5 + (hash(this.cx * 73 + k * 17, this.cz * 41) % 1) * (CHUNK_SIZE - 3);
-            const rz = oz + 1.5 + (hash(this.cz * 59 + k * 23, this.cx * 31) % 1) * (CHUNK_SIZE - 3);
+        // Natural Alpine Trees (26 trees per chunk)
+        const treeCount = 26;
+        for (let k = 0; k < treeCount; k++) {
+            const rx = ox + 1.2 + (hash(this.cx * 73 + k * 17, this.cz * 41 + k * 11) % 1) * (CHUNK_SIZE - 2.4);
+            const rz = oz + 1.2 + (hash(this.cz * 59 + k * 23, this.cx * 31 + k * 13) % 1) * (CHUNK_SIZE - 2.4);
             const h = getContinuousAlpineHeight(rx, rz, this.world);
-            if (h > 3.2 || h < 0.2) continue;
+            if (h > 3.6 || h < 0.15) continue;
 
             let nearRoad = false;
             if (this.world && this.world.edges && this.world.byId) {
@@ -2595,15 +2757,34 @@ class AlpineChunk {
             }
             if (nearRoad) continue;
 
-            if (k % 3 === 0) {
-                batch.add(new THREE.CylinderGeometry(0.06, 0.1, 1.2, 5), birchTrunk, rx, h + 0.6, rz);
-                batch.add(new THREE.DodecahedronGeometry(0.55), birchLeaves, rx, h + 1.4, rz);
+            const scale = 0.85 + (hash(k * 31, this.cx + this.cz) % 1) * 0.45;
+            if (k % 4 === 0) {
+                // Multi-branch Birch Tree
+                batch.add(new THREE.CylinderGeometry(0.06 * scale, 0.1 * scale, 1.3 * scale, 5), birchTrunk, rx, h + 0.65 * scale, rz);
+                batch.add(new THREE.DodecahedronGeometry(0.55 * scale), birchLeaves, rx, h + 1.5 * scale, rz);
+                batch.add(new THREE.DodecahedronGeometry(0.38 * scale), birchLeaves, rx + 0.25 * scale, h + 1.25 * scale, rz + 0.2 * scale);
+                batch.add(new THREE.DodecahedronGeometry(0.35 * scale), birchLeaves, rx - 0.22 * scale, h + 1.35 * scale, rz - 0.18 * scale);
             } else {
-                batch.add(new THREE.CylinderGeometry(0.07, 0.12, 0.8, 5), trunkMat, rx, h + 0.4, rz);
-                batch.add(new THREE.ConeGeometry(0.65, 0.9, 6), needleMat, rx, h + 1.0, rz);
-                batch.add(new THREE.ConeGeometry(0.48, 0.75, 6), needleMat, rx, h + 1.5, rz);
-                batch.add(new THREE.ConeGeometry(0.32, 0.6, 6), needleMat, rx, h + 1.95, rz);
+                // 4-tier Alpine Conifer with winter snow caps
+                batch.add(new THREE.CylinderGeometry(0.08 * scale, 0.14 * scale, 0.85 * scale, 5), trunkMat, rx, h + 0.42 * scale, rz);
+                for (let c = 0; c < 4; c++) {
+                    const r = (0.72 - c * 0.15) * scale;
+                    const hgt = (0.95 - c * 0.1) * scale;
+                    const ty = h + (0.95 + c * 0.52) * scale;
+                    batch.add(new THREE.ConeGeometry(r, hgt, 6), needleMat, rx, ty, rz);
+                    batch.add(new THREE.ConeGeometry(r * 0.62, hgt * 0.55, 6), snowSlabMaterial, rx, ty + hgt * 0.22, rz);
+                }
             }
+        }
+
+        // Mountain Boulders
+        const rockCount = 10;
+        for (let j = 0; j < rockCount; j++) {
+            const bx = ox + 1.0 + (hash(this.cx * 43 + j * 29, this.cz * 67 + j * 7) % 1) * (CHUNK_SIZE - 2.0);
+            const bz = oz + 1.0 + (hash(this.cz * 37 + j * 19, this.cx * 53 + j * 13) % 1) * (CHUNK_SIZE - 2.0);
+            const bh = getContinuousAlpineHeight(bx, bz, this.world);
+            if (bh > 4.2 || bh < 0.2) continue;
+            const bs = 0.14 + (hash(j * 17, this.cx * 11) % 1) * 0.26;
         }
 
         // Road guardrails (clean timber posts and non-protruding horizontal rails)

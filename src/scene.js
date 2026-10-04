@@ -1,6 +1,10 @@
 import * as THREE from "three";
 if (typeof window !== "undefined") window.THREE = THREE;
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { signalState } from "./world.js";
 import { RoadVectors } from "./road-vectors.js";
 import { CrashEffects } from "./crash-effects.js";
@@ -580,10 +584,12 @@ export class DriveScene {
     this.weatherParticles = new SeasonalParticles(this.scene);
 
     this.weatherMode = "clear";
-    this.scene.fog = new THREE.Fog("#b7c6d0", 230, 1050);
+    const FOG_BASE_DENSITY = 0.017;
+    this.scene.fog = new THREE.FogExp2(0x263b42, FOG_BASE_DENSITY);
+    U.uFogColor.value = this.scene.fog.color;
     this.hemiLight = new THREE.HemisphereLight("#cfe4ff", "#4d5a3c", 0.8);
     this.scene.add(this.hemiLight);
-    this.sun = new THREE.DirectionalLight("#fff5e8", 3.4);
+    this.sun = new THREE.DirectionalLight("#fff5e8", 1.8);
     this.sun.position.set(-60, 110, 40);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(
@@ -591,18 +597,45 @@ export class DriveScene {
       renderProfile.shadowSize,
     );
     Object.assign(this.sun.shadow.camera, {
-      left: -65,
-      right: 65,
-      top: 65,
-      bottom: -65,
-      near: 1,
-      far: 240,
+      left: -18,
+      right: 18,
+      top: 18,
+      bottom: -18,
+      near: 4,
+      far: 48,
     });
-    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.025;
-    this.sun.shadow.radius = 2;
+    this.sun.shadow.radius = 2.5;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
+
+    // Initialize Four-Seasons Post-Processing Pipeline
+    if (this.composer) {
+      try { this.composer.dispose(); } catch (_) {}
+      this.composer = null;
+    }
+    const pr = Math.min(devicePixelRatio, renderProfile.pixelRatio);
+    const initW = Math.max(1, this.canvas.clientWidth || 800);
+    const initH = Math.max(1, this.canvas.clientHeight || 600);
+    const composerTarget = new THREE.WebGLRenderTarget(
+      Math.floor(initW * pr),
+      Math.floor(initH * pr),
+      {
+        type: THREE.HalfFloatType,
+        samples: 4,
+      }
+    );
+    this.composer = new EffectComposer(this.renderer, composerTarget);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(initW, initH),
+      0.45,
+      0.5,
+      1.0,
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
 
     // Weather Rain Particle System (暴雨动态粒子流)
     this.rainGroup = new THREE.Group();
@@ -1417,6 +1450,10 @@ export class DriveScene {
       this.canvas.height !== Math.floor(height * this.renderer.getPixelRatio())
     ) {
       this.renderer.setSize(width, height, false);
+      if (this.composer) {
+        this.composer.setSize(width, height);
+        this.bloom?.resolution?.set(width, height);
+      }
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
     }
@@ -1901,17 +1938,21 @@ export class DriveScene {
       if (this.sky) this.sky.update(this.seasons, this.camera.position);
       if (this.weatherParticles) this.weatherParticles.update(this.camera.position);
 
+      const LIGHT_POWER = 1.8;
       this.sun.color.copy(T.sunColor);
-      this.sun.intensity = T.sunIntensity * (1 - S.cloudShade * 0.35);
-      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(150).add(new THREE.Vector3(v.x, 0, v.z));
+      this.sun.intensity = LIGHT_POWER * T.sunIntensity * (1 - S.cloudShade * 0.35);
+      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(22).add(new THREE.Vector3(v.x, 0, v.z));
       this.sun.target.position.set(v.x, 0, v.z);
 
       this.hemiLight.color.copy(T.hemiSky);
       this.hemiLight.groundColor.copy(T.hemiGround);
       this.hemiLight.intensity = T.hemiIntensity * (1 + S.snowCoverage * 0.2);
 
+      const FOG_BASE_DENSITY = 0.017;
       if (this.scene.fog) {
-        this.scene.fog.color.copy(U.uFogColor.value);
+        this.scene.fog.color.setRGB(T.fog.r * S.fogTint.x, T.fog.g * S.fogTint.y, T.fog.b * S.fogTint.z);
+        this.scene.fog.density = S.fogDensity * (FOG_BASE_DENSITY / 0.017);
+        U.uFogColor.value.copy(this.scene.fog.color);
       }
       this.renderer.toneMappingExposure = T.exposure;
 
@@ -1924,6 +1965,7 @@ export class DriveScene {
           if (g.key === "reflector") g.material.emissiveIntensity = 0.35 + T.night * 1.5 + T.evening * 0.4;
           else if (g.key === "streetlights") g.material.emissiveIntensity = T.streetlights;
           else if (g.key === "window") g.material.emissiveIntensity = T.windows;
+          else if (g.key === "bridge") g.material.emissiveIntensity = 0.5 + T.bridge * 1.6;
         }
       }
     } else {
@@ -1947,7 +1989,13 @@ export class DriveScene {
       this.alpinePassage.update(dt, this.seasons, v, this.sim.world, this.camera.position);
     }
 
-    if (draw) this.renderer.render(this.scene, this.camera);
+    if (draw) {
+      if (this.composer && this.sim.world.type === "alpine") {
+        this.composer.render(dt);
+      } else {
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
   }
   setSeason(index) {
     if (this.seasons) this.seasons.setSeason(index);
