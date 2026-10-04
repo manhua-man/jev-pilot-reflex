@@ -406,7 +406,58 @@ export function makeRoute(world, ids, laneOffset) {
     crossings = [];
   const nodes = ids.map((id) => world.byId[id]);
   const isAlpine = world.type === "alpine";
-  const lOffset = laneOffset ?? world.theme?.laneOffset ?? (isAlpine ? 0.32 : 4.8);
+
+  if (isAlpine) {
+    const lOffset = laneOffset ?? world.theme?.laneOffset ?? 0.28;
+    for (let i = 0; i < nodes.length; i++) {
+      const p = nodes[i];
+      if (!p) continue;
+      const prev = nodes[Math.max(0, i - 1)] || p;
+      const next = nodes[Math.min(nodes.length - 1, i + 1)] || p;
+      const dInX = p.x - prev.x, dInZ = p.z - prev.z;
+      const lIn = Math.hypot(dInX, dInZ) || 1;
+      const vinX = dInX / lIn, vinZ = dInZ / lIn;
+
+      const dOutX = next.x - p.x, dOutZ = next.z - p.z;
+      const lOut = Math.hypot(dOutX, dOutZ) || 1;
+      const voutX = dOutX / lOut, voutZ = dOutZ / lOut;
+
+      let tX = vinX + voutX, tZ = vinZ + voutZ;
+      const tLen = Math.hypot(tX, tZ) || 1;
+      tX /= tLen; tZ /= tLen;
+
+      // Right normal to bisector tangent: (-tZ, tX)
+      raw.push({
+        x: p.x - tZ * lOffset,
+        z: p.z + tX * lOffset,
+      });
+
+      if (p.control !== "none") {
+        crossings.push({
+          nodeId: p.id,
+          x: p.x,
+          z: p.z,
+          approach: heading(prev, p),
+          exit: heading(p, next),
+        });
+      }
+    }
+    const points = samplePolyline(raw, 0.25);
+    for (const c of crossings) {
+      const target = move(c, c.approach, -10.5);
+      let best = Infinity;
+      for (const pt of points) {
+        const d = dist(pt, target);
+        if (d < best) {
+          best = d;
+          c.stopS = pt.s;
+        }
+      }
+    }
+    return { ids, points, crossings, length: points.at(-1)?.s || 0 };
+  }
+
+  const lOffset = laneOffset ?? world.theme?.laneOffset ?? 4.8;
   const offset = (p, h) => move(p, h + Math.PI / 2, lOffset);
   for (let i = 0; i < nodes.length; i++) {
     const p = nodes[i],
@@ -601,9 +652,13 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
   world.alpineLegCount = (world.alpineLegCount || 0) + 1;
   const legIdx = world.alpineLegCount;
 
-  // Find predecessor node to determine incoming heading
+  // Find predecessor node along incoming route to determine incoming heading
   let prevNode = null;
-  if (fromNode.neighbors.length > 0) {
+  if (world.route?.ids) {
+    const idx = world.route.ids.lastIndexOf(fromNode.id);
+    if (idx > 0) prevNode = world.byId[world.route.ids[idx - 1]];
+  }
+  if (!prevNode && fromNode.neighbors.length > 0) {
     prevNode = world.byId[fromNode.neighbors[0]];
   }
   const h0 = prevNode ? heading(prevNode, fromNode) : Math.PI / 4;
@@ -641,54 +696,103 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
   let legName = "";
 
   if (archetype === 1) {
-    // 1. Hairpin Switchback Pass (盘山发卡弯群)
+    // 1. Matterhorn Hairpin Switchback Pass (高山平滑多段发卡弯群)
     legName = `Matterhorn Switchbacks · 第 ${legIdx} 盘山弯道`;
-    let cur = fromNode;
-    const turns = [
-      { d: 3.2, dh: -1.0 },  // sharp left
-      { d: 3.5, dh: 1.15 },  // sharp right
-      { d: 3.5, dh: -0.9 },  // left sweep
-      { d: 3.2, dh: 0.15 },  // straighten out
-    ];
+    
+    // Approach lead-in
+    const pApp = move(fromNode, h0, 2.4);
+    const nodeApp = addNode(`alp-hp-${legIdx}-app`, pApp.x, pApp.z);
+    link(fromNode.id, nodeApp.id, "Hairpin Pass · Approach", 1.4);
+    pathIds.push(nodeApp.id);
+
+    let cur = nodeApp;
     let curH = h0;
-    for (let k = 0; k < turns.length; k++) {
-      curH += turns[k].dh;
-      const np = move(cur, curH, turns[k].d);
-      const nid = `alp-hp-${legIdx}-${k}`;
+
+    // Hairpin Turn 1: 5-segment smooth left arc (~-77 deg, R~4.6m)
+    for (let k = 0; k < 5; k++) {
+      curH -= 0.27;
+      const np = move(cur, curH, 1.25);
+      const nid = `alp-hp-${legIdx}-t1-${k}`;
       const node = addNode(nid, np.x, np.z);
-      link(cur.id, nid, `Hairpin Pass · Turn ${k + 1}`, 1.4);
+      link(cur.id, nid, `Hairpin Pass · Mountain Shelf Arc ${k + 1}`, 1.4);
       pathIds.push(nid);
       cur = node;
     }
-    destinationId = cur.id;
+
+    // Scenic Ridge Traverse between bends
+    curH += 0.05;
+    const pMid = move(cur, curH, 3.6);
+    const nodeMid = addNode(`alp-hp-${legIdx}-mid`, pMid.x, pMid.z);
+    link(cur.id, nodeMid.id, "Hairpin Pass · Ridge Traverse", 1.4);
+    pathIds.push(nodeMid.id);
+    cur = nodeMid;
+
+    // Hairpin Turn 2: 5-segment smooth right arc (~+77 deg, R~4.6m)
+    for (let k = 0; k < 5; k++) {
+      curH += 0.27;
+      const np = move(cur, curH, 1.25);
+      const nid = `alp-hp-${legIdx}-t2-${k}`;
+      const node = addNode(nid, np.x, np.z);
+      link(cur.id, nid, `Hairpin Pass · Summit Shoulder Arc ${k + 1}`, 1.4);
+      pathIds.push(nid);
+      cur = node;
+    }
+
+    // Straight exit run
+    curH -= 0.05;
+    const pOut = move(cur, curH, 2.8);
+    const nodeOut = addNode(`alp-hp-${legIdx}-out`, pOut.x, pOut.z);
+    link(cur.id, nodeOut.id, "Hairpin Pass · Exit Straight", 1.4);
+    pathIds.push(nodeOut.id);
+    destinationId = nodeOut.id;
+
   } else if (archetype === 2) {
-    // 2. Alpine Y-Fork Bifurcation (高山Y型分流)
+    // 2. Alpine Y-Fork Bifurcation (宽阔流畅高山分流与自然中央岛)
     legName = `Summit Fork Bypass · 第 ${legIdx} 高山分流`;
-    const pIn = move(fromNode, h0, 2.5);
+    
+    // Approach straight leading to fork signpost
+    const pIn = move(fromNode, h0, 2.8);
     const nodeIn = addNode(`alp-fk-${legIdx}-in`, pIn.x, pIn.z);
     link(fromNode.id, nodeIn.id, "Fork Approach", 1.4);
 
+    // Throat bifurcation point
     const pJct = move(nodeIn, h0, 2.2);
     const nodeJct = addNode(`alp-fk-${legIdx}-jct`, pJct.x, pJct.z);
-    link(nodeIn.id, nodeJct.id, "Bifurcation Point", 1.4);
+    link(nodeIn.id, nodeJct.id, "Bifurcation Throat", 1.4);
 
-    // Left branch (Summit Ridge ↖) & Right branch (Valley Tunnel ↗)
-    const pLeft = move(move(nodeJct, h0, 4.2), h0 - Math.PI / 2, 1.8);
-    const nodeLeft = addNode(`alp-fk-${legIdx}-left`, pLeft.x, pLeft.z);
+    // Left branch (Summit Scenic Pass ↖): 3 intermediate arc nodes with 5.4m centerline clearance at apex
+    const pL1 = move(move(nodeJct, h0, 3.0), h0 - Math.PI / 2, 1.35);
+    const nodeL1 = addNode(`alp-fk-${legIdx}-L1`, pL1.x, pL1.z);
+    const pL2 = move(move(nodeJct, h0, 6.6), h0 - Math.PI / 2, 2.7);
+    const nodeL2 = addNode(`alp-fk-${legIdx}-L2`, pL2.x, pL2.z);
+    const pL3 = move(move(nodeJct, h0, 10.2), h0 - Math.PI / 2, 1.35);
+    const nodeL3 = addNode(`alp-fk-${legIdx}-L3`, pL3.x, pL3.z);
 
-    const pRight = move(move(nodeJct, h0, 4.2), h0 + Math.PI / 2, 1.8);
-    const nodeRight = addNode(`alp-fk-${legIdx}-right`, pRight.x, pRight.z);
+    // Right branch (Valley Tunnel Expressway ↗): 3 intermediate arc nodes
+    const pR1 = move(move(nodeJct, h0, 3.0), h0 + Math.PI / 2, 1.35);
+    const nodeR1 = addNode(`alp-fk-${legIdx}-R1`, pR1.x, pR1.z);
+    const pR2 = move(move(nodeJct, h0, 6.6), h0 + Math.PI / 2, 2.7);
+    const nodeR2 = addNode(`alp-fk-${legIdx}-R2`, pR2.x, pR2.z);
+    const pR3 = move(move(nodeJct, h0, 10.2), h0 + Math.PI / 2, 1.35);
+    const nodeR3 = addNode(`alp-fk-${legIdx}-R3`, pR3.x, pR3.z);
 
-    link(nodeJct.id, nodeLeft.id, "Summit Scenic Pass ↖", 1.2);
-    link(nodeJct.id, nodeRight.id, "Valley Tunnel Expressway ↗", 1.2);
-
-    // Convergence
-    const pJoin = move(nodeJct, h0, 8.5);
+    // Convergence node ahead
+    const pJoin = move(nodeJct, h0, 13.2);
     const nodeJoin = addNode(`alp-fk-${legIdx}-join`, pJoin.x, pJoin.z);
-    link(nodeLeft.id, nodeJoin.id, "Summit Descent", 1.2);
-    link(nodeRight.id, nodeJoin.id, "Valley Portal Exit", 1.2);
 
-    // Objects
+    // Link left branch sequence
+    link(nodeJct.id, nodeL1.id, "Summit Scenic Pass ↖", 1.4);
+    link(nodeL1.id, nodeL2.id, "Summit Scenic Pass ↖", 1.4);
+    link(nodeL2.id, nodeL3.id, "Summit Scenic Pass ↖", 1.4);
+    link(nodeL3.id, nodeJoin.id, "Summit Descent", 1.4);
+
+    // Link right branch sequence
+    link(nodeJct.id, nodeR1.id, "Valley Tunnel Expressway ↗", 1.4);
+    link(nodeR1.id, nodeR2.id, "Valley Tunnel Expressway ↗", 1.4);
+    link(nodeR2.id, nodeR3.id, "Valley Tunnel Expressway ↗", 1.4);
+    link(nodeR3.id, nodeJoin.id, "Valley Portal Exit", 1.4);
+
+    // Roadside timber guide signpost planted on approach shoulder
     world.objects.push({
       id: `alpine-gantry-${legIdx}`,
       type: "alpine_fork_gantry",
@@ -697,53 +801,55 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       heading: h0,
       leftText: "SUMMIT PASS ↖",
       leftSub: "雪山观景盘山道",
-      rightText: "VALLEY TUNNEL ↗",
-      rightSub: "深谷岩石隧道线",
+      rightText: "VALLEY PASS ↗",
+      rightSub: "深谷岩石景观道",
     });
 
-    world.objects.push({
-      id: `fork-gore-${legIdx}`,
-      type: "fork_gore",
-      x: nodeJct.x,
-      z: nodeJct.z,
-      leftTarget: { x: nodeLeft.x, z: nodeLeft.z },
-      rightTarget: { x: nodeRight.x, z: nodeRight.z },
-      length: 3.5,
-      width: 1.4,
-    });
-
-    const chosenBranch = branchChoice === "right" ? nodeRight.id : nodeLeft.id;
-    pathIds.push(nodeIn.id, nodeJct.id, chosenBranch, nodeJoin.id);
+    const isRight = branchChoice === "right";
+    const chosenNodes = isRight
+      ? [nodeR1.id, nodeR2.id, nodeR3.id]
+      : [nodeL1.id, nodeL2.id, nodeL3.id];
+    pathIds.push(nodeIn.id, nodeJct.id, ...chosenNodes, nodeJoin.id);
     destinationId = nodeJoin.id;
+
   } else if (archetype === 3) {
-    // 3. Alpine Lookout Roundabout (山顶环岛观景台)
+    // 3. Alpine Lookout Roundabout (山顶真实12边形圆形环岛观景台, R=4.2m)
     legName = `Bellevue Lookout Rotary · 第 ${legIdx} 环岛观景`;
-    const pEntry = move(fromNode, h0, 2.5);
+    
+    // Approach straight
+    const pEntry = move(fromNode, h0, 2.6);
     const nodeEntry = addNode(`alp-rb-${legIdx}-entry`, pEntry.x, pEntry.z);
     link(fromNode.id, nodeEntry.id, "Roundabout Approach", 1.4);
 
-    const center = move(nodeEntry, h0, 2.2);
-    const R = 1.8;
+    // Rotary center: R = 4.2m
+    const R = 4.2;
+    const center = move(nodeEntry, h0, 2.0 + R);
+
+    // 12 perimeter nodes around circular rotary ring
     const rbNodes = [];
-    for (let k = 0; k < 4; k++) {
-      const theta = h0 - Math.PI / 2 + (k / 4) * Math.PI * 2;
+    for (let k = 0; k < 12; k++) {
+      const theta = h0 + Math.PI + (k / 12) * Math.PI * 2;
       const p = {
-        x: center.x + Math.cos(theta) * R,
-        z: center.z + Math.sin(theta) * R,
+        x: center.x + Math.sin(theta) * R,
+        z: center.z - Math.cos(theta) * R,
       };
       const n = addNode(`alp-rb-${legIdx}-${k}`, p.x, p.z);
       rbNodes.push(n);
     }
-    // Link ring
-    for (let k = 0; k < 4; k++) {
-      link(rbNodes[k].id, rbNodes[(k + 1) % 4].id, "Roundabout Ring", 1.2);
+
+    // Link ring perimeter in one-way circle
+    for (let k = 0; k < 12; k++) {
+      link(rbNodes[k].id, rbNodes[(k + 1) % 12].id, "Roundabout Ring", 1.4);
     }
-    link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 1.2);
+    // Tangential approach connects to perimeter node 0
+    link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 1.4);
 
-    const pExit = move(center, h0, R + 2.0);
+    // Exit node continuing smoothly forward along h0 from perimeter node 6
+    const pExit = move(rbNodes[6], h0, 2.6);
     const nodeExit = addNode(`alp-rb-${legIdx}-exit`, pExit.x, pExit.z);
-    link(rbNodes[2].id, nodeExit.id, "Roundabout Exit", 1.4);
+    link(rbNodes[6].id, nodeExit.id, "Roundabout Exit", 1.4);
 
+    // Central alpine stone fountain & pines landmark
     world.objects.push({
       id: `alpine-fountain-${legIdx}`,
       type: "alpine_roundabout_center",
@@ -751,15 +857,34 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       z: center.z,
     });
 
-    pathIds.push(nodeEntry.id, rbNodes[0].id, rbNodes[1].id, rbNodes[2].id, nodeExit.id);
+    // Follow entry -> circular ring (nodes 0 through 6) -> exit
+    pathIds.push(
+      nodeEntry.id,
+      rbNodes[0].id,
+      rbNodes[1].id,
+      rbNodes[2].id,
+      rbNodes[3].id,
+      rbNodes[4].id,
+      rbNodes[5].id,
+      rbNodes[6].id,
+      nodeExit.id
+    );
     destinationId = nodeExit.id;
+
   } else if (archetype === 4) {
-    // 4. Gorge Viaduct Bridge (峡谷高架与石拱瀑布桥)
+    // 4. Gorge Viaduct Bridge (峡谷高架与石拱瀑布桥, 4段平滑延伸)
     legName = `Glacier Torrent Viaduct · 第 ${legIdx} 峡谷高架桥`;
     let cur = fromNode;
-    const viaductSteps = [3.2, 3.8, 3.2];
+    const viaductSteps = [
+      { d: 3.2, dh: -0.08 },
+      { d: 3.4, dh: 0.06 },
+      { d: 3.4, dh: 0.08 },
+      { d: 3.2, dh: -0.06 },
+    ];
+    let curH = h0;
     for (let k = 0; k < viaductSteps.length; k++) {
-      const np = move(cur, h0 + (k === 1 ? 0.12 : -0.06), viaductSteps[k]);
+      curH += viaductSteps[k].dh;
+      const np = move(cur, curH, viaductSteps[k].d);
       const nid = `alp-vd-${legIdx}-${k}`;
       const node = addNode(nid, np.x, np.z);
       link(cur.id, nid, `Glacier Viaduct · Span ${k + 1}`, 1.4);
@@ -767,17 +892,24 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       cur = node;
     }
     destinationId = cur.id;
+
   } else {
-    // 5. Chalet Village & Crosswalk (高山木屋村落与斑马线)
+    // 5. Chalet Village & Crosswalk (高山木屋村落与斑马线, 4段平缓风情道)
     legName = `Alpine Chalet Hamlet · 第 ${legIdx} 瑞士小镇平缓段`;
     let cur = fromNode;
-    const villageSteps = [3.0, 3.2, 3.0];
+    const villageSteps = [
+      { d: 3.0, dh: -0.06, control: "none", name: "Chalet Approach" },
+      { d: 3.2, dh: 0.05, control: "stop", name: "Village Promenade · Crosswalk" },
+      { d: 3.2, dh: 0.06, control: "none", name: "Village Fountain Way" },
+      { d: 3.0, dh: -0.05, control: "none", name: "Chalet Exit" },
+    ];
+    let curH = h0;
     for (let k = 0; k < villageSteps.length; k++) {
-      const isCrosswalk = k === 1;
-      const np = move(cur, h0 + (k === 0 ? -0.1 : 0.05), villageSteps[k]);
+      curH += villageSteps[k].dh;
+      const np = move(cur, curH, villageSteps[k].d);
       const nid = `alp-vg-${legIdx}-${k}`;
-      const node = addNode(nid, np.x, np.z, isCrosswalk ? "stop" : "none");
-      link(cur.id, nid, isCrosswalk ? "Village Promenade · Crosswalk" : "Chalet Way", 1.4);
+      const node = addNode(nid, np.x, np.z, villageSteps[k].control);
+      link(cur.id, nid, villageSteps[k].name, 1.4);
       pathIds.push(nid);
       cur = node;
     }

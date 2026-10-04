@@ -2606,17 +2606,24 @@ class AlpineChunk {
             }
         }
 
-        // Road guardrails
+        // Road guardrails (clean timber posts and non-protruding horizontal rails)
         if (this.world && this.world.edges && this.world.byId) {
             for (const e of this.world.edges) {
                 const a = this.world.byId[e.a], b = this.world.byId[e.b];
                 if (!a || !b) continue;
+                const len = dist(a, b);
+                if (len < 3.0) continue; // Only place along straightaways or viaduct spans, skip tight hairpin chords
+
                 const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
                 if (midX < ox - 3 || midX > ox + CHUNK_SIZE + 3 || midZ < oz - 3 || midZ > oz + CHUNK_SIZE + 3) continue;
 
+                const isJctA = a.neighbors && a.neighbors.length > 2;
+                const isJctB = b.neighbors && b.neighbors.length > 2;
+                const startMargin = isJctA ? 1.6 : 1.2;
+                const endMargin = isJctB ? 1.6 : 1.2;
+
                 const hEdge = heading(a, b);
-                const len = dist(a, b);
-                for (let stepAlong = 1.0; stepAlong < len - 0.5; stepAlong += 2.0) {
+                for (let stepAlong = startMargin; stepAlong <= len - endMargin; stepAlong += 1.6) {
                     const pAlong = move(a, hEdge, stepAlong);
                     for (const side of [-1, 1]) {
                         const gp = move(pAlong, hEdge + Math.PI / 2, side * (ROAD_WIDTH / 2 + 0.18));
@@ -2625,7 +2632,7 @@ class AlpineChunk {
                         if (isNearOtherRoadEdge(gp.x, gp.z, e.id, this.world)) continue;
                         const py = getContinuousAlpineHeight(gp.x, gp.z, this.world);
                         batch.add(new THREE.CylinderGeometry(0.035, 0.035, 0.32, 5), woodRail, gp.x, py + 0.16, gp.z);
-                        batch.add(new THREE.BoxGeometry(0.05, 0.08, 1.9), woodRail, gp.x, py + 0.22, gp.z, 0, Math.PI - hEdge, 0);
+                        batch.add(new THREE.BoxGeometry(0.05, 0.08, 1.35), woodRail, gp.x, py + 0.22, gp.z, 0, Math.PI - hEdge, 0);
                     }
                 }
             }
@@ -2641,13 +2648,27 @@ class AlpineChunk {
                     batch.add(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 8), stoneMat, o.x, fy + 0.6, o.z);
                     batch.add(new THREE.ConeGeometry(0.55, 1.1, 6), needleMat, o.x, fy + 1.2, o.z);
                 } else if (o.type === "alpine_fork_gantry") {
-                    const gy = getContinuousAlpineHeight(o.x, o.z, this.world);
                     const gh = o.heading || 0;
-                    for (const s of [-1.35, 1.35]) {
-                        const postP = move({ x: o.x, z: o.z }, gh + Math.PI / 2, s);
-                        batch.add(new THREE.CylinderGeometry(0.08, 0.08, 2.1, 6), woodRail, postP.x, gy + 1.05, postP.z);
-                    }
-                    batch.box(woodRail, 2.85, 0.22, 0.18, o.x, gy + 2.05, o.z, 0, -gh, 0);
+                    // Authentic Swiss roadside timber guide signpost planted on the right shoulder
+                    const signP = move({ x: o.x, z: o.z }, gh + Math.PI / 2, 1.35);
+                    const py = getContinuousAlpineHeight(signP.x, signP.z, this.world);
+
+                    // Stone foundation pedestal ring
+                    batch.add(new THREE.CylinderGeometry(0.2, 0.26, 0.25, 8), stoneMat, signP.x, py + 0.12, signP.z);
+                    // Vertical timber mast
+                    batch.add(new THREE.CylinderGeometry(0.065, 0.08, 1.85, 6), woodRail, signP.x, py + 0.95, signP.z);
+
+                    // Top directional arm (Summit Ridge Pass ↖ - yellow trail marker)
+                    batch.box(woodRail, 0.85, 0.16, 0.05, signP.x - 0.2, py + 1.5, signP.z, 0, -gh, 0);
+                    batch.box(stdMat(0xf4d03f, 0.7), 0.78, 0.12, 0.06, signP.x - 0.2, py + 1.5, signP.z, 0, -gh, 0);
+
+                    // Bottom directional arm (Valley Pass ↗ - alpine blue marker)
+                    batch.box(woodRail, 0.85, 0.16, 0.05, signP.x + 0.18, py + 1.25, signP.z, 0, -gh, 0);
+                    batch.box(stdMat(0x3498db, 0.7), 0.78, 0.12, 0.06, signP.x + 0.18, py + 1.25, signP.z, 0, -gh, 0);
+
+                    // Protective Swiss gabled roof cap with snow slab
+                    batch.add(new THREE.ConeGeometry(0.22, 0.16, 4), woodRail, signP.x, py + 1.92, signP.z, 0, Math.PI / 4, 0);
+                    batch.add(snowSlab(0.28, 0.05, 0.28), snowSlabMaterial, signP.x, py + 1.98, signP.z);
                 }
             }
         }
@@ -2688,6 +2709,52 @@ class AlpineChunk {
             pushTri(posArr, normArr, p2, p4, p3);
         };
 
+        const getNodeMiter = (nodeA, nodeB, isStart) => {
+            const dx = nodeB.x - nodeA.x;
+            const dz = nodeB.z - nodeA.z;
+            const edgeLen = Math.hypot(dx, dz) || 1;
+            const teX = dx / edgeLen;
+            const teZ = dz / edgeLen;
+            const defaultNorm = { x: -teZ, z: teX };
+
+            const targetNode = isStart ? nodeA : nodeB;
+            if (!targetNode || !targetNode.neighbors || targetNode.neighbors.length !== 2) {
+                return defaultNorm;
+            }
+
+            const otherId = isStart ? nodeB.id : nodeA.id;
+            const neighborId = targetNode.neighbors.find(id => id !== otherId);
+            if (!neighborId || !this.world.byId || !this.world.byId[neighborId]) {
+                return defaultNorm;
+            }
+            const neighborNode = this.world.byId[neighborId];
+
+            let vinX, vinZ, voutX, voutZ;
+            if (isStart) {
+                // Road flows neighborNode -> nodeA -> nodeB
+                const dInX = nodeA.x - neighborNode.x, dInZ = nodeA.z - neighborNode.z;
+                const lIn = Math.hypot(dInX, dInZ) || 1;
+                vinX = dInX / lIn; vinZ = dInZ / lIn;
+                voutX = teX; voutZ = teZ;
+            } else {
+                // Road flows nodeA -> nodeB -> neighborNode
+                vinX = teX; vinZ = teZ;
+                const dOutX = neighborNode.x - nodeB.x, dOutZ = neighborNode.z - nodeB.z;
+                const lOut = Math.hypot(dOutX, dOutZ) || 1;
+                voutX = dOutX / lOut; voutZ = dOutZ / lOut;
+            }
+
+            let tX = vinX + voutX;
+            let tZ = vinZ + voutZ;
+            const tLen = Math.hypot(tX, tZ);
+            if (tLen < 0.05) return defaultNorm;
+            tX /= tLen; tZ /= tLen;
+
+            const dot = vinX * tX + vinZ * tZ;
+            const miter = 1.0 / Math.max(0.707, Math.min(1.0, dot));
+            return { x: -tZ * miter, z: tX * miter };
+        };
+
         for (const e of this.world.edges) {
             const a = this.world.byId[e.a], b = this.world.byId[e.b];
             if (!a || !b) continue;
@@ -2698,9 +2765,13 @@ class AlpineChunk {
 
             const totalLen = dist(a, b);
             if (totalLen < 0.05) continue;
-            const hEdge = heading(a, b);
             const width = e.width || 1.4;
             const halfW = width / 2;
+
+            const normA = getNodeMiter(a, b, true);
+            const normB = getNodeMiter(a, b, false);
+            const isJctA = a.neighbors && a.neighbors.length > 2;
+            const isJctB = b.neighbors && b.neighbors.length > 2;
 
             const step = 0.35;
             const stepsCount = Math.ceil(totalLen / step);
@@ -2710,10 +2781,15 @@ class AlpineChunk {
                 const s1 = Math.min((i + 1) * step, totalLen);
                 if (s1 - s0 < 0.02) continue;
 
-                const p0 = move(a, hEdge, s0);
-                const p1 = move(a, hEdge, s1);
+                const u0 = s0 / totalLen;
+                const u1 = s1 / totalLen;
 
-                const midSegX = (p0.x + p1.x) / 2, midSegZ = (p0.z + p1.z) / 2;
+                const p0x = (1 - u0) * a.x + u0 * b.x;
+                const p0z = (1 - u0) * a.z + u0 * b.z;
+                const p1x = (1 - u1) * a.x + u1 * b.x;
+                const p1z = (1 - u1) * a.z + u1 * b.z;
+
+                const midSegX = (p0x + p1x) / 2, midSegZ = (p0z + p1z) / 2;
                 if (midSegX < minX || midSegX >= maxX || midSegZ < minZ || midSegZ >= maxZ) {
                     continue;
                 }
@@ -2724,26 +2800,31 @@ class AlpineChunk {
                     continue;
                 }
 
-                const LA2D = move(p0, hEdge - Math.PI / 2, halfW);
-                const RA2D = move(p0, hEdge + Math.PI / 2, halfW);
-                const LB2D = move(p1, hEdge - Math.PI / 2, halfW);
-                const RB2D = move(p1, hEdge + Math.PI / 2, halfW);
+                const nx0 = (1 - u0) * normA.x + u0 * normB.x;
+                const nz0 = (1 - u0) * normA.z + u0 * normB.z;
+                const nx1 = (1 - u1) * normA.x + u1 * normB.x;
+                const nz1 = (1 - u1) * normA.z + u1 * normB.z;
+
+                const LA2D = { x: p0x - nx0 * halfW, z: p0z - nz0 * halfW };
+                const RA2D = { x: p0x + nx0 * halfW, z: p0z + nz0 * halfW };
+                const LB2D = { x: p1x - nx1 * halfW, z: p1z - nz1 * halfW };
+                const RB2D = { x: p1x + nx1 * halfW, z: p1z + nz1 * halfW };
 
                 const yLA = getContinuousAlpineHeight(LA2D.x, LA2D.z, this.world) + 0.025;
                 const yRA = getContinuousAlpineHeight(RA2D.x, RA2D.z, this.world) + 0.025;
                 const yLB = getContinuousAlpineHeight(LB2D.x, LB2D.z, this.world) + 0.025;
                 const yRB = getContinuousAlpineHeight(RB2D.x, RB2D.z, this.world) + 0.025;
 
-                const yCA = getContinuousAlpineHeight(p0.x, p0.z, this.world) + 0.028;
-                const yCB = getContinuousAlpineHeight(p1.x, p1.z, this.world) + 0.028;
+                const yCA = getContinuousAlpineHeight(p0x, p0z, this.world) + 0.028;
+                const yCB = getContinuousAlpineHeight(p1x, p1z, this.world) + 0.028;
 
                 const LA = { x: LA2D.x, y: yLA, z: LA2D.z };
                 const RA = { x: RA2D.x, y: yRA, z: RA2D.z };
                 const LB = { x: LB2D.x, y: yLB, z: LB2D.z };
                 const RB = { x: RB2D.x, y: yRB, z: RB2D.z };
 
-                const CA = { x: p0.x, y: yCA, z: p0.z };
-                const CB = { x: p1.x, y: yCB, z: p1.z };
+                const CA = { x: p0x, y: yCA, z: p0z };
+                const CB = { x: p1x, y: yCB, z: p1z };
 
                 // 1. Asphalt road surface (two quads forming a slightly arched crown)
                 pushQuad(asphaltPos, asphaltNorm, LA, CA, LB, CB);
@@ -2759,41 +2840,37 @@ class AlpineChunk {
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
                 // 3. Dashed yellow center line (0.8m period, 0.04m width)
-                const dashStep = Math.floor(s0 / 0.8);
-                if (dashStep % 2 === 0) {
-                    const DLA_2D = move(p0, hEdge - Math.PI / 2, 0.022);
-                    const DRA_2D = move(p0, hEdge + Math.PI / 2, 0.022);
-                    const DLB_2D = move(p1, hEdge - Math.PI / 2, 0.022);
-                    const DRB_2D = move(p1, hEdge + Math.PI / 2, 0.022);
-                    const DLA = { x: DLA_2D.x, y: yCA + 0.005, z: DLA_2D.z };
-                    const DRA = { x: DRA_2D.x, y: yCA + 0.005, z: DRA_2D.z };
-                    const DLB = { x: DLB_2D.x, y: yCB + 0.005, z: DLB_2D.z };
-                    const DRB = { x: DRB_2D.x, y: yCB + 0.005, z: DRB_2D.z };
-                    pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+                // Suppress center dashes in junction throats to prevent intersecting crosses
+                const skipCenter = (isJctA && s0 < 0.8) || (isJctB && s1 > totalLen - 0.8);
+                if (!skipCenter) {
+                    const dashStep = Math.floor(s0 / 0.8);
+                    if (dashStep % 2 === 0) {
+                        const DLA = { x: p0x - nx0 * 0.022, y: yCA + 0.005, z: p0z - nz0 * 0.022 };
+                        const DRA = { x: p0x + nx0 * 0.022, y: yCA + 0.005, z: p0z + nz0 * 0.022 };
+                        const DLB = { x: p1x - nx1 * 0.022, y: yCB + 0.005, z: p1z - nz1 * 0.022 };
+                        const DRB = { x: p1x + nx1 * 0.022, y: yCB + 0.005, z: p1z + nz1 * 0.022 };
+                        pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+                    }
                 }
 
                 // 4. Solid white edge markings
-                // Left edge marking (inset 0.04m - 0.07m)
-                const WLA1_2D = move(p0, hEdge - Math.PI / 2, halfW - 0.04);
-                const WLA2_2D = move(p0, hEdge - Math.PI / 2, halfW - 0.07);
-                const WLB1_2D = move(p1, hEdge - Math.PI / 2, halfW - 0.04);
-                const WLB2_2D = move(p1, hEdge - Math.PI / 2, halfW - 0.07);
-                const WLA1 = { x: WLA1_2D.x, y: yLA + 0.004, z: WLA1_2D.z };
-                const WLA2 = { x: WLA2_2D.x, y: yLA + 0.004, z: WLA2_2D.z };
-                const WLB1 = { x: WLB1_2D.x, y: yLB + 0.004, z: WLB1_2D.z };
-                const WLB2 = { x: WLB2_2D.x, y: yLB + 0.004, z: WLB2_2D.z };
-                pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
+                // Suppress edge markings in junction throats so lanes blend smoothly
+                const skipEdge = (isJctA && s0 < 0.5) || (isJctB && s1 > totalLen - 0.5);
+                if (!skipEdge) {
+                    // Left edge marking (inset 0.04m - 0.07m)
+                    const WLA1 = { x: p0x - nx0 * (halfW - 0.04), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.04) };
+                    const WLA2 = { x: p0x - nx0 * (halfW - 0.07), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.07) };
+                    const WLB1 = { x: p1x - nx1 * (halfW - 0.04), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.04) };
+                    const WLB2 = { x: p1x - nx1 * (halfW - 0.07), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.07) };
+                    pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
 
-                // Right edge marking
-                const WRA1_2D = move(p0, hEdge + Math.PI / 2, halfW - 0.07);
-                const WRA2_2D = move(p0, hEdge + Math.PI / 2, halfW - 0.04);
-                const WRB1_2D = move(p1, hEdge + Math.PI / 2, halfW - 0.07);
-                const WRB2_2D = move(p1, hEdge + Math.PI / 2, halfW - 0.04);
-                const WRA1 = { x: WRA1_2D.x, y: yRA + 0.004, z: WRA1_2D.z };
-                const WRA2 = { x: WRA2_2D.x, y: yRA + 0.004, z: WRA2_2D.z };
-                const WRB1 = { x: WRB1_2D.x, y: yRB + 0.004, z: WRB1_2D.z };
-                const WRB2 = { x: WRB2_2D.x, y: yRB + 0.004, z: WRB2_2D.z };
-                pushQuad(whitePos, whiteNorm, WRA1, WRA2, WRB1, WRB2);
+                    // Right edge marking
+                    const WRA1 = { x: p0x + nx0 * (halfW - 0.07), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.07) };
+                    const WRA2 = { x: p0x + nx0 * (halfW - 0.04), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.04) };
+                    const WRB1 = { x: p1x + nx1 * (halfW - 0.07), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.07) };
+                    const WRB2 = { x: p1x + nx1 * (halfW - 0.04), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.04) };
+                    pushQuad(whitePos, whiteNorm, WRA1, WRA2, WRB1, WRB2);
+                }
             }
         }
 
@@ -2885,7 +2962,7 @@ export class AlpinePassage {
         return this.chunks.get(key);
     }
 
-    update(dt, controller, playerPos = null, world = null) {
+    update(dt, controller, playerPos = null, world = null, cameraPos = null) {
         if (!controller) return;
         if (world) {
             this.world = world;
@@ -2898,23 +2975,37 @@ export class AlpinePassage {
         }
         this.time = (this.time || 0) + dt;
 
-        // Dynamic Chunk Streaming around player
+        // Dynamic Chunk Streaming around player and camera view
+        const CHUNK_SIZE = 15.0;
+        const centers = [];
         if (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.z)) {
-            const CHUNK_SIZE = 15.0;
-            const pcx = Math.round(playerPos.x / CHUNK_SIZE);
-            const pcz = Math.round(playerPos.z / CHUNK_SIZE);
+            centers.push({
+                cx: Math.round(playerPos.x / CHUNK_SIZE),
+                cz: Math.round(playerPos.z / CHUNK_SIZE)
+            });
+        }
+        if (cameraPos && Number.isFinite(cameraPos.x) && Number.isFinite(cameraPos.z)) {
+            centers.push({
+                cx: Math.round(cameraPos.x / CHUNK_SIZE),
+                cz: Math.round(cameraPos.z / CHUNK_SIZE)
+            });
+        }
 
-            // Ensure 3x3 window around player
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dz = -1; dz <= 1; dz++) {
-                    this.ensureChunk(pcx + dx, pcz + dz);
+        if (centers.length > 0) {
+            // Ensure 3x3 window around all relevant centers
+            for (const c of centers) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        this.ensureChunk(c.cx + dx, c.cz + dz);
+                    }
                 }
             }
 
-            // Dispose distant chunks (keeping genesis diorama 0,0)
+            // Dispose chunks far from all centers (preserving genesis diorama 0,0)
             for (const [key, chunk] of this.chunks) {
                 if (chunk.cx === 0 && chunk.cz === 0) continue;
-                if (Math.max(Math.abs(chunk.cx - pcx), Math.abs(chunk.cz - pcz)) > 2) {
+                const nearAny = centers.some(c => Math.max(Math.abs(chunk.cx - c.cx), Math.abs(chunk.cz - c.cz)) <= 2);
+                if (!nearAny) {
                     chunk.dispose();
                     this.chunks.delete(key);
                 }

@@ -646,7 +646,8 @@ export class DriveScene {
       box(s, 3000, 0.8, 3000, 0, -0.7, 0, groundMat);
       buildCityRoadNetwork(this.scene, s, world, this.glowMaterials);
     }
-    for (const o of world.objects) {
+    if (world.type !== "alpine") {
+      for (const o of world.objects) {
       if (o.type === "hill") {
         const hill = cone(
           s,
@@ -1032,6 +1033,7 @@ export class DriveScene {
         this.static.add(g);
         continue;
       }
+    }
     }
     if (world.type !== "alpine") {
       // Batch by material and city block so offscreen geometry is culled,
@@ -1809,7 +1811,10 @@ export class DriveScene {
     this.destination.children[2].position.y =
       4.5 + Math.sin(this.sim.time * 2) * 0.18;
     let pos, look;
-    if (this.sim.crash) {
+    if (this.customCamera) {
+      pos = this.customCamera.pos;
+      look = this.customCamera.look;
+    } else if (this.sim.crash) {
       const side = this.sim.crash.type === "building" ? -1 : 1;
       pos = new THREE.Vector3(
         v.x - Math.sin(v.heading) * 12 + Math.cos(v.heading) * 8 * side,
@@ -1939,7 +1944,7 @@ export class DriveScene {
       this.worldActionModel.update(this.sim, dt);
     }
     if (this.alpinePassage) {
-      this.alpinePassage.update(dt, this.seasons, v, this.sim.world);
+      this.alpinePassage.update(dt, this.seasons, v, this.sim.world, this.camera.position);
     }
 
     if (draw) this.renderer.render(this.scene, this.camera);
