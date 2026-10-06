@@ -127,40 +127,38 @@ export class Simulation {
     this.traffic = [];
     for (let i = 0; i < this.world.theme.traffic; i++) this.spawnTraffic(i);
     this.pedestrians = [];
-    const pedCount = type === "highway" ? 0 : (type === "alpine" ? 10 : 14 + (type === "city" ? 12 : 0));
+    const pedCount = type === "highway" ? 0 : (type === "alpine" ? 6 : 14 + (type === "city" ? 12 : 0));
     for (let i = 0; i < pedCount; i++) {
       if (type === "alpine") {
-        const validEdges = this.world.edges.filter(e => e.width > 0 && e.a !== "alp-0" && e.b !== "alp-0");
-        const edge = choose(this.r, validEdges.length ? validEdges : this.world.edges) || this.world.edges[0];
-        const a = this.world.byId[edge.a], b = this.world.byId[edge.b];
-        const hEdge = heading(a, b);
-        const len = dist(a, b);
-        const isCrossing = i % 3 === 0;
-        const side = this.r() < 0.5 ? -1 : 1;
-        const offsetDist = isCrossing ? 0 : 0.95 * side;
-        const pathStart = move(move(a, hEdge, 0.4), hEdge + Math.PI / 2, offsetDist);
-        const progress = isCrossing ? 0 : this.r() * Math.max(0.4, len - 0.8);
-        const position = isCrossing
-          ? move(move(a, hEdge, len * 0.5), hEdge + Math.PI / 2, -1.2)
-          : move(pathStart, hEdge, progress);
-        const walkHeading = isCrossing ? (hEdge + Math.PI / 2) : hEdge;
+        const scenicSpots = [
+          { x: 3.8, z: -4.2, h: 0.5, len: 1.2 },
+          { x: 4.8, z: -3.8, h: -1.2, len: 1.0 },
+          { x: 2.2, z: -3.8, h: 2.1, len: 1.4 },
+          { x: 5.4, z: -2.0, h: -0.8, len: 1.2 },
+          { x: 5.9, z: -2.8, h: 1.5, len: 1.0 },
+          { x: -1.8, z: 0.8, h: -2.4, len: 1.5 },
+          { x: -2.2, z: -0.4, h: 0.8, len: 1.2 },
+        ];
+        const spot = scenicSpots[i % scenicSpots.length];
+        const offset = (this.r() - 0.5) * 0.3;
+        const startPos = { x: spot.x + offset, z: spot.z + offset };
         this.pedestrians.push({
           id: `pedestrian-${i}`,
           type: "pedestrian",
-          subtype: isCrossing ? "hiker_cross" : (i % 2 === 0 ? "hiker" : "villager"),
-          nodeId: a.id,
-          x: position.x,
-          z: position.z,
-          progress,
+          subtype: i % 2 === 0 ? "hiker" : "villager",
+          nodeId: "alp-0",
+          x: startPos.x,
+          z: startPos.z,
+          progress: this.r() * spot.len,
           walkPath: {
-            start: isCrossing ? position : pathStart,
-            heading: walkHeading,
-            length: isCrossing ? 2.4 : len,
+            start: startPos,
+            heading: spot.h,
+            length: spot.len,
           },
           direction: this.r() > 0.5 ? 1 : -1,
-          crossing: isCrossing,
+          crossing: false,
           walking: true,
-          speed: 0.35 + this.r() * 0.25,
+          speed: 0.25 + this.r() * 0.15,
           width: 0.2,
           depth: 0.2,
           height: 0.5,
@@ -679,40 +677,8 @@ export class Simulation {
         p.walking = true;
         p.heading = angle(p.walkPath.heading + (p.direction < 0 ? Math.PI : 0));
 
-        if (!p.isJaywalker && dist(p, this.player) > 45) {
-          const nearEdges = this.world.edges.filter((e) => {
-            const a = this.world.byId[e.a], b = this.world.byId[e.b];
-            if (!a || !b) return false;
-            const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
-            const d = Math.hypot(midX - this.player.x, midZ - this.player.z);
-            return d > 8 && d < 45;
-          });
-          if (nearEdges.length > 0) {
-            const edge = choose(this.r, nearEdges);
-            const a = this.world.byId[edge.a], b = this.world.byId[edge.b];
-            const hEdge = heading(a, b);
-            const len = dist(a, b);
-            const isCrossing = this.r() < 0.35;
-            const side = this.r() < 0.5 ? -1 : 1;
-            const offsetDist = isCrossing ? 0 : 0.95 * side;
-            const pathStart = move(move(a, hEdge, 0.4), hEdge + Math.PI / 2, offsetDist);
-            const progress = isCrossing ? 0 : this.r() * Math.max(0.4, len - 0.8);
-            const position = isCrossing
-              ? move(move(a, hEdge, len * 0.5), hEdge + Math.PI / 2, -1.2)
-              : move(pathStart, hEdge, progress);
-            const walkHeading = isCrossing ? (hEdge + Math.PI / 2) : hEdge;
-            p.x = position.x;
-            p.z = position.z;
-            p.progress = progress;
-            p.crossing = isCrossing;
-            p.subtype = isCrossing ? "hiker_cross" : (this.r() < 0.5 ? "hiker" : "villager");
-            p.walkPath = {
-              start: isCrossing ? position : pathStart,
-              heading: walkHeading,
-              length: isCrossing ? 2.4 : len,
-            };
-            p.direction = this.r() > 0.5 ? 1 : -1;
-          }
+        if (p.isJaywalker) {
+          // If jaywalker scenario triggered explicitly via button E, keep that
         }
         continue;
       }
@@ -1252,6 +1218,7 @@ export class Simulation {
       exit: ["Follow the Cedar Town off-ramp", "exit"],
       offramp: ["Enter Cedar Town", "straight"],
       town: ["Stop at the town destination", "arrive"],
+      alpine: ["Follow the scenic Alpine Pass", nextTurn],
     };
     return {
       remaining_m: round(Math.max(0, v.route.length - v.s)),
@@ -1270,10 +1237,10 @@ export class Simulation {
       ...(section
         ? {
             phase: section.kind,
-            instruction: instructions[section.kind][0],
+            instruction: instructions[section.kind]?.[0] ?? "Cruise along the road",
             road_name: section.name,
             speed_limit_mps: section.speedLimit,
-            next_turn: instructions[section.kind][1],
+            next_turn: instructions[section.kind]?.[1] ?? nextTurn,
             turn_distance_m: round(
               Math.max(
                 0,

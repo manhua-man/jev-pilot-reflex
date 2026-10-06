@@ -1885,16 +1885,24 @@ export class DriveScene {
     } else if (this.sim.world.type === "alpine") {
       const view = this.cameraInput.current(),
         yaw = v.heading + view.yaw;
-      // High-angle diorama chase view: elevated above the hero car to take in the full diorama
-      const dist = Math.max(3.2, Math.min(7.5, view.distance * 0.4));
-      const height = Math.max(1.8, Math.min(4.8, dist * 0.65));
+      // High-angle diorama tilt-shift chase view:
+      // Elevates camera nicely above tree height and respects user pitch adjustment
+      const pitch = Math.max(0.62, Math.min(1.35, view.pitch + 0.15));
+      const dist = Math.max(2.8, Math.min(8.2, view.distance * 0.32));
+      const hDist = Math.cos(pitch) * dist;
+      const vHeight = Math.sin(pitch) * dist + 0.85;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
-        v.x - Math.sin(yaw) * dist,
-        py + height,
-        v.z + Math.cos(yaw) * dist,
+        v.x - Math.sin(yaw) * hDist,
+        py + vHeight,
+        v.z + Math.cos(yaw) * hDist,
       );
-      const ahead = 1.0;
+      // Guarantee camera remains well above mountain slope terrain
+      const terrH = getContinuousAlpineHeight(pos.x, pos.z, this.sim.world);
+      if (pos.y < terrH + 1.2) {
+        pos.y = terrH + 1.2;
+      }
+      const ahead = 1.1;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
         py + 0.35,

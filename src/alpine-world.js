@@ -1282,13 +1282,13 @@ function createSafeCanvas(w = 256, h = 256) {
                 const capGeo = mergeGeometries(capTiers.map(nonIndexed));
 
                 const spots = [
-                    [-6.3, -1.0], [-2.0, -5.0], [2.5, 5.5], [4.5, 2.0], [6.2, 3.2], [-6.8, -3.2],
+                    [-8.2, -1.0], [-2.0, -5.0], [2.5, 5.5], [4.5, 2.0], [6.2, 3.2], [-7.8, -4.5],
                     [-3.4, -6.3], [5.5, 5.8], [-1.5, 6.7], [-2.5, 2.9], [6.6, -6.6], [-4.6, -5.9], [-6.2, 5.9]
                 ];
                 const mats = [];
                 for (const [x0, z0] of spots) {
                     const x = x0 + (rand() - 0.5) * 0.3, z = z0 + (rand() - 0.5) * 0.3;
-                    if (!isMeadowSpot(x, z, { road: 0.7, stream: 0.9, hut: 2.0, mill: 1.6, maxH: 3.4, minH: 0.05 })) continue;
+                    if (!isMeadowSpot(x, z, { road: 1.1, stream: 0.9, hut: 2.0, mill: 1.6, maxH: 3.4, minH: 0.05 })) continue;
                     const s = randRange(0.55, 0.85);
                     _obj.position.set(x, getTerrainHeight(x, z) - 0.05, z);
                     _obj.rotation.set(0, rand() * Math.PI * 2, 0);
@@ -2749,7 +2749,7 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 1.1) {
+                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 1.45) {
                         nearRoad = true;
                         break;
                     }
@@ -2977,7 +2977,7 @@ class AlpineChunk {
 
                 // In Genesis chunk, skip stone bridge deck so stone bridge structure remains visible
                 const pBridgeDist = Math.hypot(midSegX - (-0.72), midSegZ - (-0.72));
-                if (isGenesis && pBridgeDist < 1.1) {
+                if (isGenesis && pBridgeDist < 1.24) {
                     continue;
                 }
 

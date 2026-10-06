@@ -304,6 +304,23 @@ function refreshWorld() {
   $("world-select").value = w.type;
   $("speed-limit").textContent = Math.round(w.theme.limit * 3.6);
   $("arrival").hidden = true;
+  if (w.type === "alpine") {
+    const fL = $("fork-choose-left"), fR = $("fork-choose-right");
+    if (fL) fL.innerHTML = `<span class="fork-arrow">↖</span> 雪山观景道`;
+    if (fR) fR.innerHTML = `<span class="fork-arrow">↗</span> 深谷岩石道`;
+    const fTitle = document.querySelector("#fork-nav-selector .fork-title");
+    if (fTitle) fTitle.textContent = "高山分岔导航预选";
+    const pL = document.querySelector('.vla-pill[data-vla="left_fork"]');
+    const pR = document.querySelector('.vla-pill[data-vla="right_fork"]');
+    const pO = document.querySelector('.vla-pill[data-vla="overtake"]');
+    const pY = document.querySelector('.vla-pill[data-vla="defensive_yield"]');
+    const pE = document.querySelector('.vla-pill[data-vla="eco_cruise"]');
+    if (pL) pL.textContent = "↖ 走雪山盘山道";
+    if (pR) pR.textContent = "↗ 走深谷景观道";
+    if (pO) pO.textContent = "⚡ 借道超车慢行车";
+    if (pY) pY.textContent = "🛡️ 减速观景礼让";
+    if (pE) pE.textContent = "🚗 高山惬意巡航";
+  }
 }
 function syncPilot() {
   const on = sim.autopilot;
@@ -1318,6 +1335,38 @@ function updateDualBrainMonitor(sim, lastDecision) {
     }
     if (s2Status) {
       s2Status.textContent = "● 意图下发通道: 导航分流导引态 (Route Branch Guided)";
+    }
+  } else if (sim.world.type === "alpine") {
+    if (sim.weather === "rain") {
+      if (s2Perception) {
+        s2Perception.textContent = "🌧️ 阿尔卑斯山冷雨弥漫：视距受限，高山路面湿滑（μ=0.55）。全路段实行雨雾低附着力闭环。";
+      }
+      if (s2Intent) {
+        s2Intent.textContent = "高山雨天防御巡航：维持 12 km/h 稳健车速，入弯提前收油平顺减速，防止弯道滑移。";
+      }
+      if (s2Status) {
+        s2Status.textContent = "● 意图下发通道: 高山雨雪防滑态 (Alpine Rain Guard)";
+      }
+    } else if (sim.weather === "night") {
+      if (s2Perception) {
+        s2Perception.textContent = "🌙 阿尔卑斯山夜景巡航：沿途石桥灯与小木屋窗棂泛光，前照大灯照亮弯道，视野清朗。";
+      }
+      if (s2Intent) {
+        s2Intent.textContent = "夜色静谧巡航：维持 15 km/h 目标车速，依托灯光锥顺应山势平稳循迹，车道居中度 98.8%。";
+      }
+      if (s2Status) {
+        s2Status.textContent = "● 意图下发通道: 高山夜景巡视态 (Alpine Night Vision)";
+      }
+    } else {
+      if (s2Perception) {
+        s2Perception.textContent = "阿尔卑斯山脉高山峡谷盘山道巡航，路面标线清晰（中央黄色分道虚线、两侧白色边缘实线）。沿途雪峰与松林环抱，路宽 1.4m，车道居中度 98.6%。";
+      }
+      if (s2Intent) {
+        s2Intent.textContent = "高山景观惬意巡航：维持标称巡航车速（目标 18 km/h），沿山脊公路平稳通行，实时监控弯道视距与对向山路交通。";
+      }
+      if (s2Status) {
+        s2Status.textContent = "● 意图下发通道: 高山景观巡航态 (Alpine Scenic Cruise · 1.5Hz)";
+      }
     }
   } else {
     if (sim.weather === "rain") {

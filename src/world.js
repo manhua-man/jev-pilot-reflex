@@ -454,7 +454,15 @@ export function makeRoute(world, ids, laneOffset) {
         }
       }
     }
-    return { ids, points, crossings, length: points.at(-1)?.s || 0 };
+    const sections = [{
+      kind: "alpine",
+      name: "Alpine Pass Road",
+      startS: 0,
+      endS: points.at(-1)?.s || 0,
+      speedLimit: world.theme?.limit || 5,
+      laneHalfWidth: 0.65,
+    }];
+    return { ids, points, crossings, sections, length: points.at(-1)?.s || 0 };
   }
 
   const lOffset = laneOffset ?? world.theme?.laneOffset ?? 4.8;
