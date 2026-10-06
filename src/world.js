@@ -602,6 +602,8 @@ export function generateAlpine(seed, theme) {
   link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau", 1.4);
   link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit", 1.4);
   link("alp-6", "alp-7", "Alpine Pass · Boundary Crossing", 1.4);
+  // Stamp correct laneHalfWidth on every initial edge
+  for (const e of edges) e.laneHalfWidth = e.width / 2;
 
   const objects = [];
   const world = {
@@ -674,6 +676,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       b: bId,
       length: dist(a, b),
       width,
+      laneHalfWidth: width / 2,
       speedLimit: world.theme?.limit || 5,
       name,
     });
@@ -708,38 +711,38 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     let cur = nodeApp;
     let curH = h0;
 
-    // Hairpin Turn 1: 5-segment smooth left arc (~-77 deg, R~4.6m)
-    for (let k = 0; k < 5; k++) {
-      curH -= 0.27;
-      const np = move(cur, curH, 1.25);
+    // Hairpin Turn 1: 8-segment smooth left arc (~-22° each = ~176° total, R≈3.5m)
+    for (let k = 0; k < 8; k++) {
+      curH -= 0.22;
+      const np = move(cur, curH, 1.2);
       const nid = `alp-hp-${legIdx}-t1-${k}`;
       const node = addNode(nid, np.x, np.z);
-      link(cur.id, nid, `Hairpin Pass · Mountain Shelf Arc ${k + 1}`, 1.4);
+      link(cur.id, nid, `Hairpin Pass · Arc Left ${k + 1}`, 1.4);
       pathIds.push(nid);
       cur = node;
     }
 
-    // Scenic Ridge Traverse between bends
-    curH += 0.05;
-    const pMid = move(cur, curH, 3.6);
+    // Ridge Traverse — short straight between the two hairpins
+    curH += 0.04;
+    const pMid = move(cur, curH, 4.2);
     const nodeMid = addNode(`alp-hp-${legIdx}-mid`, pMid.x, pMid.z);
     link(cur.id, nodeMid.id, "Hairpin Pass · Ridge Traverse", 1.4);
     pathIds.push(nodeMid.id);
     cur = nodeMid;
 
-    // Hairpin Turn 2: 5-segment smooth right arc (~+77 deg, R~4.6m)
-    for (let k = 0; k < 5; k++) {
-      curH += 0.27;
-      const np = move(cur, curH, 1.25);
+    // Hairpin Turn 2: 8-segment smooth right arc (~+22° each = ~176° total)
+    for (let k = 0; k < 8; k++) {
+      curH += 0.22;
+      const np = move(cur, curH, 1.2);
       const nid = `alp-hp-${legIdx}-t2-${k}`;
       const node = addNode(nid, np.x, np.z);
-      link(cur.id, nid, `Hairpin Pass · Summit Shoulder Arc ${k + 1}`, 1.4);
+      link(cur.id, nid, `Hairpin Pass · Arc Right ${k + 1}`, 1.4);
       pathIds.push(nid);
       cur = node;
     }
 
     // Straight exit run
-    curH -= 0.05;
+    curH -= 0.04;
     const pOut = move(cur, curH, 2.8);
     const nodeOut = addNode(`alp-hp-${legIdx}-out`, pOut.x, pOut.z);
     link(cur.id, nodeOut.id, "Hairpin Pass · Exit Straight", 1.4);
@@ -776,8 +779,11 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     const pR3 = move(move(nodeJct, h0, 10.2), h0 + Math.PI / 2, 1.35);
     const nodeR3 = addNode(`alp-fk-${legIdx}-R3`, pR3.x, pR3.z);
 
-    // Convergence node ahead
-    const pJoin = move(nodeJct, h0, 13.2);
+    // Convergence node: midpoint between the two branch endpoints, pushed slightly forward
+    const pJoin = {
+      x: (pL3.x + pR3.x) / 2 + Math.sin(h0) * 2.0,
+      z: (pL3.z + pR3.z) / 2 - Math.cos(h0) * 2.0,
+    };
     const nodeJoin = addNode(`alp-fk-${legIdx}-join`, pJoin.x, pJoin.z);
 
     // Link left branch sequence
@@ -844,8 +850,15 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     // Tangential approach connects to perimeter node 0
     link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 1.4);
 
-    // Exit node continuing smoothly forward along h0 from perimeter node 6
-    const pExit = move(rbNodes[6], h0, 2.6);
+    // Exit node: tangent at node 6 points away from center (perpendicular to radius)
+    // radius vector at node 6: rbNodes[6] - center => theta6 = h0 + Math.PI + (6/12)*2π = h0 + 2π
+    // tangent (clockwise circulation) is perpendicular CW: heading = theta6 + π/2
+    const theta6 = h0 + Math.PI + (6 / 12) * Math.PI * 2;
+    const exitHeading = theta6 + Math.PI / 2; // tangential, clockwise
+    const pExit = {
+      x: rbNodes[6].x + Math.sin(exitHeading) * 2.6,
+      z: rbNodes[6].z - Math.cos(exitHeading) * 2.6,
+    };
     const nodeExit = addNode(`alp-rb-${legIdx}-exit`, pExit.x, pExit.z);
     link(rbNodes[6].id, nodeExit.id, "Roundabout Exit", 1.4);
 
@@ -857,7 +870,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       z: center.z,
     });
 
-    // Follow entry -> circular ring (nodes 0 through 6) -> exit
+    // Follow entry -> half-circle (nodes 0 through 6) -> exit
     pathIds.push(
       nodeEntry.id,
       rbNodes[0].id,

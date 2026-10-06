@@ -98,7 +98,15 @@ export function roadGeometry(world) {
       );
     }
     for (const n of world.nodes) {
-      const half = 10.05;
+      // Alpine worlds have narrow 1.4m roads — use actual edge width instead of
+      // a fixed 10.05m city-block half-size which would create huge phantom zones.
+      const connectedEdges = world.edges.filter(
+        (e) => e.a === n.id || e.b === n.id,
+      );
+      const maxWidth = connectedEdges.length
+        ? Math.max(...connectedEdges.map((e) => e.width || 1.4))
+        : (world.type === "alpine" ? 1.4 : 20);
+      const half = world.type === "alpine" ? maxWidth / 2 + 0.1 : 10.05;
       surfaces.push(
         polygon([
           { x: n.x - half, z: n.z - half },

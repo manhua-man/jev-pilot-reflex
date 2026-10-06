@@ -3020,16 +3020,16 @@ class AlpineChunk {
                 const RB_bot = { x: RB.x, y: yRB - 0.15, z: RB.z };
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
-                // 3. Dashed yellow center line (0.8m period, 0.04m width)
+                // 3. Dashed yellow center line (0.8m period, 0.06m width)
                 // Suppress center dashes in junction throats to prevent intersecting crosses
                 const skipCenter = (isJctA && s0 < 0.8) || (isJctB && s1 > totalLen - 0.8);
                 if (!skipCenter) {
                     const dashStep = Math.floor(s0 / 0.8);
                     if (dashStep % 2 === 0) {
-                        const DLA = { x: p0x - nx0 * 0.022, y: yCA + 0.005, z: p0z - nz0 * 0.022 };
-                        const DRA = { x: p0x + nx0 * 0.022, y: yCA + 0.005, z: p0z + nz0 * 0.022 };
-                        const DLB = { x: p1x - nx1 * 0.022, y: yCB + 0.005, z: p1z - nz1 * 0.022 };
-                        const DRB = { x: p1x + nx1 * 0.022, y: yCB + 0.005, z: p1z + nz1 * 0.022 };
+                        const DLA = { x: p0x - nx0 * 0.03, y: yCA + 0.005, z: p0z - nz0 * 0.03 };
+                        const DRA = { x: p0x + nx0 * 0.03, y: yCA + 0.005, z: p0z + nz0 * 0.03 };
+                        const DLB = { x: p1x - nx1 * 0.03, y: yCB + 0.005, z: p1z - nz1 * 0.03 };
+                        const DRB = { x: p1x + nx1 * 0.03, y: yCB + 0.005, z: p1z + nz1 * 0.03 };
                         pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
                     }
                 }
@@ -3038,17 +3038,17 @@ class AlpineChunk {
                 // Suppress edge markings in junction throats so lanes blend smoothly
                 const skipEdge = (isJctA && s0 < 0.5) || (isJctB && s1 > totalLen - 0.5);
                 if (!skipEdge) {
-                    // Left edge marking (inset 0.04m - 0.07m)
+                    // Left edge marking (inset 0.04m - 0.08m from edge, 0.04m wide)
                     const WLA1 = { x: p0x - nx0 * (halfW - 0.04), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.04) };
-                    const WLA2 = { x: p0x - nx0 * (halfW - 0.07), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.07) };
+                    const WLA2 = { x: p0x - nx0 * (halfW - 0.08), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.08) };
                     const WLB1 = { x: p1x - nx1 * (halfW - 0.04), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.04) };
-                    const WLB2 = { x: p1x - nx1 * (halfW - 0.07), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.07) };
+                    const WLB2 = { x: p1x - nx1 * (halfW - 0.08), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.08) };
                     pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
 
-                    // Right edge marking
-                    const WRA1 = { x: p0x + nx0 * (halfW - 0.07), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.07) };
+                    // Right edge marking (0.04m wide)
+                    const WRA1 = { x: p0x + nx0 * (halfW - 0.08), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.08) };
                     const WRA2 = { x: p0x + nx0 * (halfW - 0.04), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.04) };
-                    const WRB1 = { x: p1x + nx1 * (halfW - 0.07), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.07) };
+                    const WRB1 = { x: p1x + nx1 * (halfW - 0.08), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.08) };
                     const WRB2 = { x: p1x + nx1 * (halfW - 0.04), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.04) };
                     pushQuad(whitePos, whiteNorm, WRA1, WRA2, WRB1, WRB2);
                 }
