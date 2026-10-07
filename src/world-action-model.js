@@ -11,6 +11,7 @@
 
 import * as THREE from "three";
 import { dist, clamp, round } from "./math.js";
+import { getContinuousAlpineHeight } from "./alpine-world.js";
 
 export class WorldActionModel {
   constructor(sim, options = {}) {
@@ -142,6 +143,8 @@ export class WorldActionModel {
     const pZ = player.z;
     const h = player.heading;
     const vSpeed = Math.max(0.5, player.speed);
+    const isAlpine = sim.world && sim.world.type === "alpine";
+    const getPtY = (x, z) => (isAlpine ? getContinuousAlpineHeight(x, z, sim.world) + 0.045 : 0.22);
 
     // Branch 0: Nominal Lane-Center Rollout
     const branch0 = [];
@@ -150,12 +153,14 @@ export class WorldActionModel {
       const s = player.s + vSpeed * t;
       const pt = sim.pointAtRoute ? sim.pointAtRoute(s) : null;
       if (pt) {
-        branch0.push({ x: pt.x, z: pt.z, y: 0.22, speed: vSpeed, t });
+        branch0.push({ x: pt.x, z: pt.z, y: getPtY(pt.x, pt.z), speed: vSpeed, t });
       } else {
+        const x = pX + Math.sin(h) * vSpeed * t;
+        const z = pZ - Math.cos(h) * vSpeed * t;
         branch0.push({
-          x: pX + Math.sin(h) * vSpeed * t,
-          z: pZ - Math.cos(h) * vSpeed * t,
-          y: 0.22,
+          x,
+          z,
+          y: getPtY(x, z),
           speed: vSpeed,
           t,
         });
@@ -176,12 +181,15 @@ export class WorldActionModel {
     for (let step = 0; step <= horizonSteps; step++) {
       const t = step * timeStep;
       const progressT = Math.min(1.0, t / 2.0);
-      const lateral = -3.6 * (1.0 - Math.cos(progressT * Math.PI)) / 2.0;
+      const latDist = isAlpine ? -1.2 : -3.6;
+      const lateral = latDist * (1.0 - Math.cos(progressT * Math.PI)) / 2.0;
       const forward = (vSpeed + 2.5 * progressT) * t;
+      const x = pX + Math.sin(h) * forward + Math.cos(h) * lateral;
+      const z = pZ - Math.cos(h) * forward + Math.sin(h) * lateral;
       branch1.push({
-        x: pX + Math.sin(h) * forward + Math.cos(h) * lateral,
-        z: pZ - Math.cos(h) * forward + Math.sin(h) * lateral,
-        y: 0.22,
+        x,
+        z,
+        y: getPtY(x, z),
         speed: vSpeed + 2.5 * progressT,
         t,
       });
@@ -202,10 +210,12 @@ export class WorldActionModel {
       const t = step * timeStep;
       const decel = Math.max(2.0, vSpeed - 3.2 * t);
       const forward = Math.max(0, vSpeed * t - 0.5 * 3.2 * t * t);
+      const x = pX + Math.sin(h) * forward;
+      const z = pZ - Math.cos(h) * forward;
       branch2.push({
-        x: pX + Math.sin(h) * forward,
-        z: pZ - Math.cos(h) * forward,
-        y: 0.22,
+        x,
+        z,
+        y: getPtY(x, z),
         speed: decel,
         t,
       });
@@ -226,10 +236,12 @@ export class WorldActionModel {
       const t = step * timeStep;
       const rushSpeed = vSpeed + 4.5 * t;
       const forward = rushSpeed * t;
+      const x = pX + Math.sin(h) * forward;
+      const z = pZ - Math.cos(h) * forward;
       branch3.push({
-        x: pX + Math.sin(h) * forward,
-        z: pZ - Math.cos(h) * forward,
-        y: 0.22,
+        x,
+        z,
+        y: getPtY(x, z),
         speed: rushSpeed,
         t,
       });
@@ -254,8 +266,10 @@ export class WorldActionModel {
       const futureT = 2.0; // 2 seconds into future
       const futureX = adv.x + Math.sin(adv.heading) * adv.speed * futureT;
       const futureZ = adv.z - Math.cos(adv.heading) * adv.speed * futureT;
+      const boxY = isAlpine ? getContinuousAlpineHeight(futureX, futureZ, sim.world) + 0.18 : 0.7;
 
-      box.position.set(futureX, 0.7, futureZ);
+      box.scale.set(isAlpine ? 0.24 : 1, isAlpine ? 0.24 : 1, isAlpine ? 0.24 : 1);
+      box.position.set(futureX, boxY, futureZ);
       box.rotation.y = adv.heading;
       box.visible = (this.mode === "wa" || this.mode === "wla");
 

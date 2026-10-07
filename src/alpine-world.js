@@ -197,7 +197,7 @@ function createSafeCanvas(w = 256, h = 256) {
             if (streamDist < 0.62) h -= (1 - smoothstep(streamDist, 0.08, 0.62)) * 0.18;
 
             const latDist = getMinRoadDist(x, z, world);
-            const roadShoulder = ROAD_WIDTH / 2 + 0.6;
+            const roadShoulder = ROAD_WIDTH / 2 + 1.25;
             if (latDist < roadShoulder) {
                 const t = clamp((latDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
                 const s = t * t * (3 - 2 * t);
@@ -243,35 +243,63 @@ function createSafeCanvas(w = 256, h = 256) {
                 h = lerp(genH, h, sBlend);
             }
 
-                // Smooth road corridor carving
-                if (world && world.edges && world.byId) {
-                    let minDist = Infinity;
-                    let targetRoadH = 0.05;
-                    for (const e of world.edges) {
-                        const a = world.byId[e.a], b = world.byId[e.b];
-                        if (!a || !b) continue;
-                        const dx = b.x - a.x, dz = b.z - a.z;
-                        const l2 = dx * dx + dz * dz;
-                        if (!l2) continue;
-                        const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
-                        const px = a.x + t * dx, pz = a.z + t * dz;
-                        const d = Math.hypot(x - px, z - pz);
-                        if (d < minDist) {
-                            minDist = d;
-                            targetRoadH = 0.05 + valueNoise(px * 0.05, pz * 0.05) * 0.5;
+            // Smooth road corridor and roundabout plateau carving
+            if (world && world.edges && world.byId) {
+                // 1. Check for nearby roundabout center objects
+                if (world.objects) {
+                    for (const o of world.objects) {
+                        if (o.type === "alpine_roundabout_center") {
+                            const dRotary = Math.hypot(x - o.x, z - o.z);
+                            const R = 4.2;
+                            if (dRotary < R + 2.8) {
+                                const baseRotaryH = 0.05 + valueNoise(o.x * 0.05, o.z * 0.05) * 0.5;
+                                if (dRotary < R - ROAD_WIDTH / 2) {
+                                    // Gentle landscaped center mound for stone fountain and pines (max +0.10m)
+                                    const mound = Math.max(0, 1 - (dRotary / Math.max(0.1, R - ROAD_WIDTH / 2)) ** 2) * 0.10;
+                                    return baseRotaryH + mound;
+                                } else if (dRotary <= R + ROAD_WIDTH / 2 + 0.6) {
+                                    // Road ring deck corridor is completely flat
+                                    return baseRotaryH;
+                                } else {
+                                    // Outer shoulder blends gently into surrounding mountains
+                                    const tOut = clamp((dRotary - (R + ROAD_WIDTH / 2 + 0.6)) / 2.2, 0, 1);
+                                    const sOut = tOut * tOut * (3 - 2 * tOut);
+                                    return lerp(baseRotaryH, h, sOut);
+                                }
+                            }
                         }
                     }
-                    if (dEdge < 5.0) {
-                        const roadBlend = clamp(dEdge / 5.0, 0, 1);
-                        targetRoadH = lerp(0.05, targetRoadH, roadBlend);
-                    }
-                    const roadShoulder = ROAD_WIDTH / 2 + 0.85;
-                    if (minDist < roadShoulder) {
-                        const t = clamp((minDist - ROAD_WIDTH / 2) / (roadShoulder - ROAD_WIDTH / 2), 0, 1);
-                        const s = t * t * (3 - 2 * t);
-                        h = targetRoadH * (1 - s) + h * s;
+                }
+
+                // 2. Standard road corridor carving
+                let minDist = Infinity;
+                let targetRoadH = 0.05;
+                for (const e of world.edges) {
+                    const a = world.byId[e.a], b = world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
+                    const px = a.x + t * dx, pz = a.z + t * dz;
+                    const d = Math.hypot(x - px, z - pz);
+                    if (d < minDist) {
+                        minDist = d;
+                        targetRoadH = 0.05 + valueNoise(px * 0.05, pz * 0.05) * 0.5;
                     }
                 }
+                if (dEdge < 5.0) {
+                    const roadBlend = clamp(dEdge / 5.0, 0, 1);
+                    targetRoadH = lerp(0.05, targetRoadH, roadBlend);
+                }
+                const roadShoulder = ROAD_WIDTH / 2 + 1.3;
+                const blendMargin = 1.8;
+                if (minDist < roadShoulder + blendMargin) {
+                    const t = clamp((minDist - roadShoulder) / blendMargin, 0, 1);
+                    const s = t * t * (3 - 2 * t);
+                    h = targetRoadH * (1 - s) + h * s;
+                }
+            }
             return h;
         }
 
@@ -412,28 +440,13 @@ function createSafeCanvas(w = 256, h = 256) {
                             float snSnow = snowBand * flatMask;
                             col = mix(col, vec3(0.86, 0.9, 0.96) * (0.94 + 0.06 * n2), snSnow);
 
-                            // Road paint, snowy shoulders and wet asphalt in winter.
-                            float snWet = 0.0;
-                            float lat = abs(-wp.x * 0.707106 + wp.z * 0.707106);
-                            float along = wp.x * 0.707106 + wp.z * 0.707106;
-                            if ((lat < 0.72 && wp.y < 0.2 && abs(wp.x) < 7.5 && abs(wp.z) < 7.5) || vMat.z > 0.4) {
-                                vec3 asphalt = vec3(0.18, 0.19, 0.21) * mix(1.0, 0.5, uSnowCoverage);
-                                float dash = step(0.5, fract(along * 0.75));
-                                float isCenter = step(lat, 0.02) * dash;
-                                float isEdge = step(abs(lat - 0.6), 0.025);
-                                vec3 roadCol = mix(asphalt, vec3(0.9, 0.75, 0.1), isCenter);
-                                roadCol = mix(roadCol, vec3(0.85), isEdge);
-                                float edgeSnow = uSnowCoverage * smoothstep(0.5, 0.68, lat + (n2 - 0.5) * 0.14);
-                                roadCol = mix(roadCol, vec3(0.84, 0.88, 0.93), edgeSnow);
-                                float shoulder = (abs(wp.x) < 7.5 && abs(wp.z) < 7.5) ? smoothstep(0.7, 0.72, lat) : (1.0 - smoothstep(0.4, 0.9, vMat.z));
-                                col = mix(roadCol, col, shoulder);
-                                snWet = uSnowCoverage * (1.0 - edgeSnow) * (1.0 - shoulder);
-                                snSnow *= shoulder;
-                            }
+                            // Natural gravel/compacted soil roadbed under road mesh
+                            float roadBed = smoothstep(0.2, 0.8, vMat.z);
+                            vec3 gravelBed = vec3(0.28, 0.26, 0.23) * (0.85 + 0.3 * n2);
+                            col = mix(col, gravelBed, roadBed * 0.75);
                             diffuseColor.rgb = col;
                         `,
                         fragmentRoughness: /* glsl */`
-                            roughnessFactor = mix(roughnessFactor, 0.26, snWet);
                             roughnessFactor = mix(roughnessFactor, 0.7, snSnow * 0.6);
                         `
                     }
@@ -1795,7 +1808,7 @@ function createSafeCanvas(w = 256, h = 256) {
             const sign = new THREE.Group();
             const along = -3.75, side = -1.18;
             sign.position.set(along * ROAD_DIR_X + side * -ROAD_DIR_Z, 0.08, along * ROAD_DIR_Z + side * ROAD_DIR_X);
-            sign.rotation.y = Math.PI / 4;
+            sign.rotation.y = 5 * Math.PI / 4;
             const b = new StaticBatch();
             const postMat = new THREE.MeshStandardMaterial({ color: 0x48565a, metalness: 0.55, roughness: 0.5 });
             [-0.34, 0.34].forEach(x => b.box(postMat, 0.055, 1.35, 0.055, x, 0.68, 0));
@@ -2800,8 +2813,9 @@ class AlpineChunk {
 
                 const isJctA = a.neighbors && a.neighbors.length > 2;
                 const isJctB = b.neighbors && b.neighbors.length > 2;
-                const startMargin = isJctA ? 1.6 : 1.2;
-                const endMargin = isJctB ? 1.6 : 1.2;
+                if (isJctA || isJctB || (e.id && (e.id.includes("fk") || e.id.includes("rb")))) continue;
+                const startMargin = 1.2;
+                const endMargin = 1.2;
 
                 const hEdge = heading(a, b);
                 for (let stepAlong = startMargin; stepAlong <= len - endMargin; stepAlong += 1.6) {
@@ -2975,10 +2989,27 @@ class AlpineChunk {
                     continue;
                 }
 
-                // In Genesis chunk, skip stone bridge deck so stone bridge structure remains visible
+                // In Genesis chunk, align elevation smoothly to bridge deck and skip bridge span
+                const bridgeDist0 = Math.hypot(p0x - (-0.72), p0z - (-0.72));
+                const bridgeDist1 = Math.hypot(p1x - (-0.72), p1z - (-0.72));
                 const pBridgeDist = Math.hypot(midSegX - (-0.72), midSegZ - (-0.72));
-                if (isGenesis && pBridgeDist < 1.24) {
+                if (isGenesis && pBridgeDist < 1.18) {
                     continue;
+                }
+
+                let baseH0 = getContinuousAlpineHeight(p0x, p0z, this.world);
+                let baseH1 = getContinuousAlpineHeight(p1x, p1z, this.world);
+                if (isGenesis) {
+                    if (bridgeDist0 < 2.4) {
+                        const bt0 = Math.max(0, Math.min(1, (2.4 - bridgeDist0) / 1.2));
+                        const sBt0 = bt0 * bt0 * (3 - 2 * bt0);
+                        baseH0 = (1 - sBt0) * baseH0 + sBt0 * 0.087; // 0.087 + 0.028 = 0.115
+                    }
+                    if (bridgeDist1 < 2.4) {
+                        const bt1 = Math.max(0, Math.min(1, (2.4 - bridgeDist1) / 1.2));
+                        const sBt1 = bt1 * bt1 * (3 - 2 * bt1);
+                        baseH1 = (1 - sBt1) * baseH1 + sBt1 * 0.087;
+                    }
                 }
 
                 const nx0 = (1 - u0) * normA.x + u0 * normB.x;
@@ -2991,13 +3022,15 @@ class AlpineChunk {
                 const LB2D = { x: p1x - nx1 * halfW, z: p1z - nz1 * halfW };
                 const RB2D = { x: p1x + nx1 * halfW, z: p1z + nz1 * halfW };
 
-                const yLA = getContinuousAlpineHeight(LA2D.x, LA2D.z, this.world) + 0.025;
-                const yRA = getContinuousAlpineHeight(RA2D.x, RA2D.z, this.world) + 0.025;
-                const yLB = getContinuousAlpineHeight(LB2D.x, LB2D.z, this.world) + 0.025;
-                const yRB = getContinuousAlpineHeight(RB2D.x, RB2D.z, this.world) + 0.025;
+                const yCA = baseH0 + 0.028;
+                const yCB = baseH1 + 0.028;
 
-                const yCA = getContinuousAlpineHeight(p0x, p0z, this.world) + 0.028;
-                const yCB = getContinuousAlpineHeight(p1x, p1z, this.world) + 0.028;
+                // Road cross-section is anchored to centerline height with slight crown (3mm)
+                // This eliminates the severe vertical cliff-sampling spikes on mountain curves!
+                const yLA = yCA - 0.003;
+                const yRA = yCA - 0.003;
+                const yLB = yCB - 0.003;
+                const yRB = yCB - 0.003;
 
                 const LA = { x: LA2D.x, y: yLA, z: LA2D.z };
                 const RA = { x: RA2D.x, y: yRA, z: RA2D.z };
@@ -3011,18 +3044,18 @@ class AlpineChunk {
                 pushQuad(asphaltPos, asphaltNorm, LA, CA, LB, CB);
                 pushQuad(asphaltPos, asphaltNorm, CA, RA, CB, RB);
 
-                // 2. Road side skirts (15cm downward edge so road never floats on steep slopes)
-                const LA_bot = { x: LA.x, y: yLA - 0.15, z: LA.z };
-                const LB_bot = { x: LB.x, y: yLB - 0.15, z: LB.z };
+                // 2. Road side skirts (45cm downward edge so road never floats on steep slopes)
+                const LA_bot = { x: LA.x, y: yLA - 0.45, z: LA.z };
+                const LB_bot = { x: LB.x, y: yLB - 0.45, z: LB.z };
                 pushQuad(asphaltPos, asphaltNorm, LB, LA, LB_bot, LA_bot);
 
-                const RA_bot = { x: RA.x, y: yRA - 0.15, z: RA.z };
-                const RB_bot = { x: RB.x, y: yRB - 0.15, z: RB.z };
+                const RA_bot = { x: RA.x, y: yRA - 0.45, z: RA.z };
+                const RB_bot = { x: RB.x, y: yRB - 0.45, z: RB.z };
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
                 // 3. Dashed yellow center line (0.8m period, 0.06m width)
                 // Suppress center dashes in junction throats to prevent intersecting crosses
-                const skipCenter = (isJctA && s0 < 0.8) || (isJctB && s1 > totalLen - 0.8);
+                const skipCenter = (isJctA && s0 < 1.4) || (isJctB && s1 > totalLen - 1.4);
                 if (!skipCenter) {
                     const dashStep = Math.floor(s0 / 0.8);
                     if (dashStep % 2 === 0) {
@@ -3036,15 +3069,31 @@ class AlpineChunk {
 
                 // 4. Solid white edge markings
                 // Suppress edge markings in junction throats so lanes blend smoothly
-                const skipEdge = (isJctA && s0 < 0.5) || (isJctB && s1 > totalLen - 0.5);
-                if (!skipEdge) {
+                const isLeftBranch = e.id && (e.id.includes("-L") || e.name?.includes("Summit Scenic Pass"));
+                const isRightBranch = e.id && (e.id.includes("-R") || e.name?.includes("Valley Tunnel Expressway"));
+
+                let skipLeft = (isJctA && s0 < 0.6) || (isJctB && s1 > totalLen - 0.6);
+                let skipRight = (isJctA && s0 < 0.6) || (isJctB && s1 > totalLen - 0.6);
+
+                if (isLeftBranch) {
+                    // Left branch inner edge is Right side: suppress for first 2.2m from fork junction
+                    if (s0 < 2.2) skipRight = true;
+                }
+                if (isRightBranch) {
+                    // Right branch inner edge is Left side: suppress for first 2.2m from fork junction
+                    if (s0 < 2.2) skipLeft = true;
+                }
+
+                if (!skipLeft) {
                     // Left edge marking (inset 0.04m - 0.08m from edge, 0.04m wide)
                     const WLA1 = { x: p0x - nx0 * (halfW - 0.04), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.04) };
                     const WLA2 = { x: p0x - nx0 * (halfW - 0.08), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.08) };
                     const WLB1 = { x: p1x - nx1 * (halfW - 0.04), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.04) };
                     const WLB2 = { x: p1x - nx1 * (halfW - 0.08), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.08) };
                     pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
+                }
 
+                if (!skipRight) {
                     // Right edge marking (0.04m wide)
                     const WRA1 = { x: p0x + nx0 * (halfW - 0.08), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.08) };
                     const WRA2 = { x: p0x + nx0 * (halfW - 0.04), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.04) };

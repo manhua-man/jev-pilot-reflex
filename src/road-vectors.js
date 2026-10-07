@@ -5,6 +5,7 @@ import {
   candidateName,
   vectorWeights,
 } from "./planning.js";
+import { getContinuousAlpineHeight } from "./alpine-world.js";
 
 function ribbon() {
   const geometry = new THREE.BufferGeometry();
@@ -55,24 +56,29 @@ function ribbon() {
   mesh.renderOrder = 3;
   return mesh;
 }
-function updateRibbon(mesh, points, width, y) {
+function updateRibbon(mesh, points, width, y, world) {
   const a = mesh.geometry.attributes.position;
+  const isAlpine = world && world.type === "alpine";
   for (let i = 0; i < points.length; i++) {
     const before = points[Math.max(0, i - 1)],
       after = points[Math.min(points.length - 1, i + 1)],
       dx = after.x - before.x,
       dz = after.z - before.z,
       len = Math.hypot(dx, dz) || 1;
+    let py = y;
+    if (isAlpine) {
+      py = getContinuousAlpineHeight(points[i].x, points[i].z, world) + y;
+    }
     a.setXYZ(
       i * 2,
       points[i].x - (dz / len) * width,
-      y,
+      py,
       points[i].z + (dx / len) * width,
     );
     a.setXYZ(
       i * 2 + 1,
       points[i].x + (dz / len) * width,
-      y,
+      py,
       points[i].z - (dx / len) * width,
     );
   }
@@ -179,7 +185,7 @@ export class RoadVectors {
     this.group.visible = false;
     this.layer.hidden = true;
   }
-  render(car, camera, width, height, dt, active, paused, aebActive = false) {
+  render(car, camera, width, height, dt, active, paused, aebActive = false, world = null) {
     const age = paused ? 0 : performance.now() - this.received;
     const weights = active
       ? vectorWeights(this.answer, this.answeredPlan?.eligible, age)
@@ -203,6 +209,7 @@ export class RoadVectors {
       );
     }
     let selectedPoints = null;
+    const isAlpine = world && world.type === "alpine";
     if (chosen && this.enabled) {
       const candidate = this.answeredPlan.vectors[this.answer.choice];
       const displayed = animatePath(
@@ -214,8 +221,12 @@ export class RoadVectors {
         paused,
       );
       selectedPoints = displayed;
-      updateRibbon(this.selected, displayed, 0.2, 0.25);
-      updateRibbon(this.selectedGlow, displayed, 0.5, 0.195);
+      const ribbonWidth = isAlpine ? 0.08 : 0.2;
+      const glowWidth = isAlpine ? 0.16 : 0.5;
+      const ribbonY = isAlpine ? 0.045 : 0.25;
+      const glowY = isAlpine ? 0.038 : 0.195;
+      updateRibbon(this.selected, displayed, ribbonWidth, ribbonY, world);
+      updateRibbon(this.selectedGlow, displayed, glowWidth, glowY, world);
       const ribbonColor = aebActive ? "#ef4444" : "#007aff";
       this.selected.material.uniforms.tint.value.set(ribbonColor);
       this.selectedGlow.material.uniforms.tint.value.set(ribbonColor);
@@ -252,9 +263,9 @@ export class RoadVectors {
         paused,
       );
       const points = selected && selectedPoints ? selectedPoints : animated;
-      item.width = selected ? 0.2 : 0.055;
+      item.width = selected ? (isAlpine ? 0.08 : 0.2) : (isAlpine ? 0.03 : 0.055);
       item.line.visible = !selected || !this.enabled;
-      updateRibbon(item.line, points, item.width, 0.22);
+      updateRibbon(item.line, points, item.width, isAlpine ? 0.04 : 0.22, world);
       item.line.material.uniforms.tint.value.set(
         candidate.collision_predicted
           ? "#e86940"

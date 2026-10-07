@@ -1989,6 +1989,7 @@ export class DriveScene {
       this.sim.autopilot,
       this.sim.paused,
       this.sim.aebActive,
+      this.sim.world,
     );
     if (this.worldActionModel) {
       this.worldActionModel.update(this.sim, dt);
