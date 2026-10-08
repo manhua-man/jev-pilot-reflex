@@ -1880,32 +1880,40 @@ export class DriveScene {
           ).multiplyScalar(25 * carScale),
         );
     } else if (this.mode === "map" && this.sim.world.type === "alpine") {
-      pos = new THREE.Vector3(12.8, 10.5, 14.2);
-      look = new THREE.Vector3(0, 0.8, 0);
+      const py = this.player.position.y || 0.05;
+      const view = this.cameraInput.current();
+      const orbitYaw = Math.PI / 4 + (view.yaw || 0);
+      pos = new THREE.Vector3(
+        v.x - Math.sin(orbitYaw) * 14.5,
+        py + 13.0,
+        v.z - Math.cos(orbitYaw) * 14.5,
+      );
+      look = new THREE.Vector3(v.x, py + 0.35, v.z);
     } else if (this.sim.world.type === "alpine") {
-      const view = this.cameraInput.current(),
-        yaw = v.heading + view.yaw;
-      // High-angle diorama tilt-shift chase view:
-      // Elevates camera nicely above tree height and respects user pitch adjustment
-      const pitch = Math.max(0.62, Math.min(1.35, view.pitch + 0.15));
-      const dist = Math.max(2.8, Math.min(8.2, view.distance * 0.32));
+      const view = this.cameraInput.current();
+      // True Four-Seasons Diorama Tilt-Shift Follow Cam:
+      // Uses stable isometric angle (45 deg) + user orbit drag,
+      // avoiding dizzying car-heading rotations while keeping the miniature diorama in full view
+      const orbitYaw = Math.PI / 4 + (view.yaw || 0);
+      const pitch = Math.max(0.48, Math.min(1.15, view.pitch + 0.12));
+      const dist = Math.max(5.2, Math.min(12.5, (view.distance || 12) * 0.58));
       const hDist = Math.cos(pitch) * dist;
-      const vHeight = Math.sin(pitch) * dist + 0.85;
+      const vHeight = Math.sin(pitch) * dist + 1.25;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
-        v.x - Math.sin(yaw) * hDist,
+        v.x - Math.sin(orbitYaw) * hDist,
         py + vHeight,
-        v.z + Math.cos(yaw) * hDist,
+        v.z - Math.cos(orbitYaw) * hDist,
       );
-      // Guarantee camera remains well above mountain slope terrain
+      // Guarantee camera remains nicely above mountain slope terrain
       const terrH = getContinuousAlpineHeight(pos.x, pos.z, this.sim.world);
-      if (pos.y < terrH + 1.2) {
-        pos.y = terrH + 1.2;
+      if (pos.y < terrH + 1.5) {
+        pos.y = terrH + 1.5;
       }
-      const ahead = 1.1;
+      const ahead = 0.35;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
-        py + 0.35,
+        py + 0.28,
         v.z - Math.cos(v.heading) * ahead,
       );
     } else {

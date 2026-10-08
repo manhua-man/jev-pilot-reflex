@@ -1773,7 +1773,7 @@ function createSafeCanvas(w = 256, h = 256) {
            the ALPINE PASS sign.
            ════════════════════════════════════════════════════════════════════ */
         function buildRoadDetails(scene, glowMaterials) {
-            const guardMat = new THREE.MeshStandardMaterial({ color: 0x9da6a3, roughness: 0.45, metalness: 0.55 });
+            const guardMat = new THREE.MeshStandardMaterial({ color: 0x5a4332, roughness: 0.85, metalness: 0.08 });
             const reflectorMat = new THREE.MeshStandardMaterial({ color: 0xffe5a1, emissive: 0xffa800, emissiveIntensity: 0.9, toneMapped: false });
             if (glowMaterials) glowMaterials.push({ material: reflectorMat, key: 'reflector' });
             [-1, 1].forEach(side => {
@@ -1806,7 +1806,7 @@ function createSafeCanvas(w = 256, h = 256) {
             const tex = new THREE.CanvasTexture(canvas);
             tex.colorSpace = THREE.SRGBColorSpace;
             const sign = new THREE.Group();
-            const along = -3.75, side = -1.18;
+            const along = -2.2, side = -2.1;
             sign.position.set(along * ROAD_DIR_X + side * -ROAD_DIR_Z, 0.08, along * ROAD_DIR_Z + side * ROAD_DIR_X);
             sign.rotation.y = 5 * Math.PI / 4;
             const b = new StaticBatch();
@@ -2402,9 +2402,9 @@ function getSharedRoadMaterials() {
     if (!_sharedAsphaltMat) {
         _sharedAsphaltMat = patchMaterial(
             new THREE.MeshStandardMaterial({
-                color: 0x22262a,
-                roughness: 0.85,
-                metalness: 0.05,
+                color: 0x2b2f34,
+                roughness: 0.82,
+                metalness: 0.04,
                 flatShading: false,
             }),
             {
@@ -2427,30 +2427,36 @@ function getSharedRoadMaterials() {
             new THREE.MeshStandardMaterial({
                 color: 0xf59e0b,
                 roughness: 0.45,
-                metalness: 0.08,
+                metalness: 0.05,
                 emissive: 0xcc7000,
-                emissiveIntensity: 0.35,
+                emissiveIntensity: 0.04,
             }),
             {
                 key: 'alpine-road-yellow',
                 worldPos: true,
                 worldNormal: true,
-                fragmentColor: snowDustCode('0.7')
+                fragmentColor: snowDustCode('0.7'),
+                fragmentEmissive: /* glsl */`
+                    totalEmissiveRadiance += vec3(0.98, 0.65, 0.05) * (uNight * 0.45);
+                `
             }
         );
         _sharedWhiteMat = patchMaterial(
             new THREE.MeshStandardMaterial({
                 color: 0xf1f5f9,
                 roughness: 0.45,
-                metalness: 0.08,
+                metalness: 0.05,
                 emissive: 0xd8e2ec,
-                emissiveIntensity: 0.25,
+                emissiveIntensity: 0.04,
             }),
             {
                 key: 'alpine-road-white',
                 worldPos: true,
                 worldNormal: true,
-                fragmentColor: snowDustCode('0.7')
+                fragmentColor: snowDustCode('0.7'),
+                fragmentEmissive: /* glsl */`
+                    totalEmissiveRadiance += vec3(0.92, 0.95, 1.0) * (uNight * 0.45);
+                `
             }
         );
     }
