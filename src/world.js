@@ -284,6 +284,28 @@ export function generateWorld(seed, type = "town") {
     );
   }
   const byId = Object.fromEntries(nodes.map((v) => [v.id, v]));
+
+  // Boulevard street trees along avenue sidewalks
+  if (type === "city" || type === "town") {
+    for (const e of edges) {
+      const a = byId[e.a], b = byId[e.b];
+      if (!a || !b) continue;
+      const len = dist(a, b);
+      if (len < 60) continue;
+      const h = heading(a, b);
+      const treeOffset = (e.width || 20) / 2 + 3.2;
+      for (let d = 24; d < len - 24; d += 36) {
+        for (const side of [-1, 1]) {
+          const tp = move(move(a, h, d), h + Math.PI / 2, treeOffset * side);
+          add("tree", tp.x, tp.z, {
+            height: 4.8 + r() * 2.5,
+            kind: "round",
+          });
+        }
+      }
+    }
+  }
+
   for (const node of nodes)
     for (const nid of node.neighbors) {
       if (node.control === "none") continue;

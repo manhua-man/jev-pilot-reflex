@@ -117,8 +117,8 @@ export function getYellowMarkingMaterial() {
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.95), snowCover * 0.6);
       `,
       fragmentEmissive: /* glsl */ `
-        // Retroreflective glint under headlights
-        totalEmissiveRadiance += vec3(0.98, 0.78, 0.12) * (0.08 + uNight * 0.35);
+        // Retroreflective glint under headlights at night
+        totalEmissiveRadiance += vec3(0.98, 0.78, 0.12) * (uNight * 0.40);
       `,
     });
   }
@@ -146,7 +146,8 @@ export function getWhiteMarkingMaterial() {
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.97), snowCover * 0.6);
       `,
       fragmentEmissive: /* glsl */ `
-        totalEmissiveRadiance += vec3(0.92, 0.95, 1.0) * (0.08 + uNight * 0.38);
+        // Retroreflective glint under headlights at night
+        totalEmissiveRadiance += vec3(0.92, 0.95, 1.0) * (uNight * 0.45);
       `,
     });
   }

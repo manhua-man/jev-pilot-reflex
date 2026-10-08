@@ -584,12 +584,12 @@ export class DriveScene {
     this.weatherParticles = new SeasonalParticles(this.scene);
 
     this.weatherMode = "clear";
-    const FOG_BASE_DENSITY = 0.017;
-    this.scene.fog = new THREE.FogExp2(0x263b42, FOG_BASE_DENSITY);
+    const FOG_BASE_DENSITY = 0.0055;
+    this.scene.fog = new THREE.FogExp2(0x9bc0d5, FOG_BASE_DENSITY);
     U.uFogColor.value = this.scene.fog.color;
-    this.hemiLight = new THREE.HemisphereLight("#cfe4ff", "#4d5a3c", 0.8);
+    this.hemiLight = new THREE.HemisphereLight("#cfe4ff", "#4d5a3c", 0.85);
     this.scene.add(this.hemiLight);
-    this.sun = new THREE.DirectionalLight("#fff5e8", 1.8);
+    this.sun = new THREE.DirectionalLight("#fff5e8", 2.0);
     this.sun.position.set(-60, 110, 40);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(
@@ -630,9 +630,9 @@ export class DriveScene {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(initW, initH),
-      0.45,
-      0.5,
-      1.0,
+      0.22,
+      0.4,
+      1.35,
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -669,7 +669,7 @@ export class DriveScene {
     this.static = new THREE.Group();
     const s = this.static;
     // High-fidelity engineered road network
-    const groundMat = pbr("grass", "#5d7a46", 6);
+    const groundMat = pbr("grass", "#386828", 4);
     if (world.type === "highway") {
       box(s, 3000, 0.8, 3000, 0, -0.7, 0, groundMat);
       this.buildHighway(s, world);
@@ -1956,7 +1956,7 @@ export class DriveScene {
       this.hemiLight.groundColor.copy(T.hemiGround);
       this.hemiLight.intensity = T.hemiIntensity * (1 + S.snowCoverage * 0.2);
 
-      const FOG_BASE_DENSITY = 0.017;
+      const FOG_BASE_DENSITY = 0.0055;
       if (this.scene.fog) {
         this.scene.fog.color.setRGB(T.fog.r * S.fogTint.x, T.fog.g * S.fogTint.y, T.fog.b * S.fogTint.z);
         this.scene.fog.density = S.fogDensity * (FOG_BASE_DENSITY / 0.017);
@@ -1999,7 +1999,7 @@ export class DriveScene {
     }
 
     if (draw) {
-      if (this.composer && this.sim.world.type === "alpine") {
+      if (this.composer) {
         this.composer.render(dt);
       } else {
         this.renderer.render(this.scene, this.camera);

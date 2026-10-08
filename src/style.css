@@ -2629,25 +2629,26 @@ body.crashed .world-picker {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(14, 165, 233, 0.28));
-  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(56, 189, 248, 0.6);
   border-radius: 8px;
-  padding: 5px 11px;
+  padding: 5px 12px;
   font-size: 11.5px;
   font-weight: 600;
-  color: #f0fdf4;
+  color: #38bdf8;
   text-decoration: none;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
 }
 .alpine-btn:hover {
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.35), rgba(14, 165, 233, 0.42));
-  border-color: rgba(56, 189, 248, 0.8);
+  background: rgba(15, 23, 42, 0.95);
+  border-color: #38bdf8;
   color: #ffffff;
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.4);
 }
 
 
