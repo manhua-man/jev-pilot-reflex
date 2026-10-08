@@ -167,6 +167,11 @@ kbd {
   padding-left: 12px;
   border-left: 1px solid var(--line);
   height: 28px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.world-picker::-webkit-scrollbar {
+  display: none;
 }
 .world-picker select {
   border: 0;
@@ -222,7 +227,7 @@ kbd {
 }
 .navigation-hud {
   position: fixed;
-  top: 22px;
+  top: 80px;
   right: 27px;
   z-index: 6;
   display: flex;

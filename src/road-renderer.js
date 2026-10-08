@@ -56,15 +56,13 @@ export function getAsphaltMaterial() {
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.96), snowAmount * 0.75);
       `,
       fragmentRoughness: /* glsl */ `
-        // When wet (rain or winter ice melt), asphalt becomes a mirror-like specular surface
-        float wetRoughness = mix(roughnessFactor, 0.20, clamp(uWetness * 1.25, 0.0, 0.95));
+        // Real asphalt retains aggregate roughness even under damp/rain conditions (slight sheen, not a chrome mirror)
+        float wetRoughness = mix(roughnessFactor, 0.56, clamp(uWetness * 0.75, 0.0, 0.5));
         roughnessFactor = wetRoughness;
       `,
-      fragmentNormal: /* glsl */ `
-        // Water film smoothes out micro-bumps
-        normal = mix(normal, vec3(0.0, 0.0, 1.0), clamp(uWetness * 0.55, 0.0, 0.65));
-      `,
     });
+    cachedAsphaltMaterial.roughness = 0.92;
+    cachedAsphaltMaterial.envMapIntensity = 0.08;
     cachedAsphaltMaterial.userData.metersPerTile = 4.0;
   }
   return cachedAsphaltMaterial;
@@ -89,6 +87,8 @@ export function getPavementMaterial() {
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.89, 0.93, 0.98), sd);
       `,
     });
+    cachedPavementMaterial.roughness = 0.88;
+    cachedPavementMaterial.envMapIntensity = 0.12;
     cachedPavementMaterial.userData.metersPerTile = 3.0;
   }
   return cachedPavementMaterial;
@@ -100,6 +100,7 @@ export function getYellowMarkingMaterial() {
       color: 0xfacc15,
       roughness: 0.42,
       metalness: 0.05,
+      envMapIntensity: 0.15,
     });
     cachedYellowMarkingMaterial = patchMaterial(mat, {
       key: "marking-yellow",
@@ -130,6 +131,7 @@ export function getWhiteMarkingMaterial() {
       color: 0xf8fafc,
       roughness: 0.38,
       metalness: 0.05,
+      envMapIntensity: 0.15,
     });
     cachedWhiteMarkingMaterial = patchMaterial(mat, {
       key: "marking-white",
@@ -215,20 +217,31 @@ export function buildCityRoadNetwork(scene, group, world, glowMaterials) {
     const roadWidth = e.width || 20;
 
     // A. Concrete sidewalks / raised curbs on left and right (12cm urban curb step)
-    const sidewalkWidth = 2.4;
-    const sidewalkHeight = 0.22;
-    const sidewalkOffset = roadWidth / 2 + sidewalkWidth / 2;
-    for (const sd of [-sidewalkOffset, sidewalkOffset]) {
-      const sp = move({ x, z }, h + Math.PI / 2, sd);
-      const curbGeo = new THREE.BoxGeometry(sidewalkWidth, sidewalkHeight, len + 0.1);
-      const curbMesh = new THREE.Mesh(
-        metricUV(curbGeo, pavementMat),
-        pavementMat,
-      );
-      curbMesh.position.set(sp.x, 0.02, sp.z);
-      curbMesh.rotation.y = -h;
-      curbMesh.receiveShadow = true;
-      group.add(curbMesh);
+    // Diverging expressway ramps from the fork junction do not have pedestrian sidewalks
+    if (e.a !== "fork-junction") {
+      const sidewalkWidth = 2.4;
+      const sidewalkHeight = 0.22;
+      const sidewalkOffset = roadWidth / 2 + sidewalkWidth / 2;
+
+      const clearA = (a.isFork || a.id === "fork-junction") ? 14.0 : 11.2;
+      const clearB = (b.isFork || b.id === "fork-junction") ? 14.0 : 11.2;
+      const curbLen = len - (clearA + clearB);
+
+      if (curbLen > 4.0) {
+        const curbCenterPoint = move(a, h, (clearA + len - clearB) / 2);
+        for (const sd of [-sidewalkOffset, sidewalkOffset]) {
+          const sp = move(curbCenterPoint, h + Math.PI / 2, sd);
+          const curbGeo = new THREE.BoxGeometry(sidewalkWidth, sidewalkHeight, curbLen);
+          const curbMesh = new THREE.Mesh(
+            metricUV(curbGeo, pavementMat),
+            pavementMat,
+          );
+          curbMesh.position.set(sp.x, 0.02, sp.z);
+          curbMesh.rotation.y = -h;
+          curbMesh.receiveShadow = true;
+          group.add(curbMesh);
+        }
+      }
     }
 
     // B. Engineered asphalt road deck (top surface at y = 0.01)
@@ -243,28 +256,33 @@ export function buildCityRoadNetwork(scene, group, world, glowMaterials) {
     group.add(roadMesh);
 
     // C. Double solid yellow centerlines (双黄线: ±0.24m, width 0.14m at y = 0.022)
-    for (const yellowOffset of [-0.24, 0.24]) {
-      const yp = move({ x, z }, h + Math.PI / 2, yellowOffset);
-      const markGeo = new THREE.PlaneGeometry(
-        0.14,
-        Math.max(1, len - 16),
-      );
-      markGeo.rotateX(-Math.PI / 2);
-      const markMesh = new THREE.Mesh(markGeo, yellowMat);
-      markMesh.position.set(yp.x, 0.022, yp.z);
-      markMesh.rotation.y = -h;
-      group.add(markMesh);
+    // One-way diverging expressway ramps do not use opposing yellow centerlines
+    if (e.a !== "fork-junction") {
+      for (const yellowOffset of [-0.24, 0.24]) {
+        const yp = move({ x, z }, h + Math.PI / 2, yellowOffset);
+        const markGeo = new THREE.PlaneGeometry(
+          0.14,
+          Math.max(1, len - 16),
+        );
+        markGeo.rotateX(-Math.PI / 2);
+        const markMesh = new THREE.Mesh(markGeo, yellowMat);
+        markMesh.position.set(yp.x, 0.022, yp.z);
+        markMesh.rotation.y = -h;
+        group.add(markMesh);
+      }
     }
 
-    // D. Lane dividing dashed lines (4车道划分白色虚线 at ±roadWidth/4)
-    const laneOffset = roadWidth / 4;
+    // D. Lane dividing dashed lines
+    // Diverging one-way ramps have a single center divider at 0; 4-lane roads have dividers at ±roadWidth/4
+    const isForkBranch = e.a === "fork-junction";
+    const dashOffsets = isForkBranch ? [0] : [-roadWidth / 4, roadWidth / 4];
     const dashLength = 4.0;
     const dashGap = 5.0;
     const step = dashLength + dashGap;
     let studCounter = 0;
 
     for (let k = 14; k < len - 14; k += step) {
-      for (const sd of [-laneOffset, laneOffset]) {
+      for (const sd of dashOffsets) {
         const dp = move(move(a, h, k + dashLength / 2), h + Math.PI / 2, sd);
         const dashGeo = new THREE.PlaneGeometry(0.15, dashLength);
         dashGeo.rotateX(-Math.PI / 2);
@@ -289,6 +307,10 @@ export function buildCityRoadNetwork(scene, group, world, glowMaterials) {
     // E. Outer edge solid white boundary lines
     const edgeOffset = roadWidth / 2 - 0.65;
     for (const sd of [-edgeOffset, edgeOffset]) {
+      // Skip inner gore sides for fork branches to prevent lines crossing into the gore island
+      if (isForkBranch && e.b === "fork-left" && sd > 0) continue;
+      if (isForkBranch && e.b === "fork-right" && sd < 0) continue;
+
       const ep = move({ x, z }, h + Math.PI / 2, sd);
       const edgeGeo = new THREE.PlaneGeometry(
         0.18,
@@ -305,54 +327,59 @@ export function buildCityRoadNetwork(scene, group, world, glowMaterials) {
   // 2. Intersections & Crosswalks
   for (const n of world.nodes.filter(
     (node) =>
-      (world.type !== "highway" || node.townJunction) &&
-      node.control !== "none",
+      world.type !== "highway" || node.townJunction,
   )) {
     // A. Smooth asphalt junction deck (top surface at y = 0.01)
-    const juncGeo = new THREE.BoxGeometry(20.4, 0.12, 20.4);
+    const isFork = n.isFork || n.id === "fork-junction";
+    const juncW = isFork ? 34.0 : 20.4;
+    const juncL = isFork ? 36.0 : 20.4;
+    const juncZ = isFork ? n.z + 10.0 : n.z;
+    const juncGeo = new THREE.BoxGeometry(juncW, 0.12, juncL);
     const juncMesh = new THREE.Mesh(
       metricUV(juncGeo, asphaltMat),
       asphaltMat,
     );
-    juncMesh.position.set(n.x, -0.05, n.z);
+    juncMesh.position.set(n.x, -0.05, juncZ);
     juncMesh.receiveShadow = true;
     group.add(juncMesh);
 
-    // B. Pedestrian zebra stripes & stop lines for all approaches
-    for (const id of n.neighbors) {
-      const b = world.byId[id];
-      if (!b) continue;
+    // B. Pedestrian zebra stripes & stop lines for controlled intersections
+    if (n.control !== "none" && !isFork) {
+      for (const id of n.neighbors) {
+        const b = world.byId[id];
+        if (!b) continue;
 
-      const dx = Math.sign(b.x - n.x);
-      const dz = Math.sign(b.z - n.z);
+        const dx = Math.sign(b.x - n.x);
+        const dz = Math.sign(b.z - n.z);
 
-      // Zebra crossings (pedestrian crosswalk bars across 4 lanes)
-      for (let k = -8.0; k <= 8.0; k += 1.6) {
-        const zebraW = dx ? 3.0 : 0.8;
-        const zebraL = dx ? 0.8 : 3.0;
-        const zebraGeo = new THREE.PlaneGeometry(zebraW, zebraL);
-        zebraGeo.rotateX(-Math.PI / 2);
-        const zebraMesh = new THREE.Mesh(zebraGeo, whiteMat);
-        zebraMesh.position.set(
-          n.x + dx * 11.2 + (dz ? k : 0),
-          0.024,
-          n.z + dz * 11.2 + (dx ? k : 0),
+        // Zebra crossings (pedestrian crosswalk bars across 4 lanes)
+        for (let k = -8.0; k <= 8.0; k += 1.6) {
+          const zebraW = dx ? 3.0 : 0.8;
+          const zebraL = dx ? 0.8 : 3.0;
+          const zebraGeo = new THREE.PlaneGeometry(zebraW, zebraL);
+          zebraGeo.rotateX(-Math.PI / 2);
+          const zebraMesh = new THREE.Mesh(zebraGeo, whiteMat);
+          zebraMesh.position.set(
+            n.x + dx * 11.2 + (dz ? k : 0),
+            0.024,
+            n.z + dz * 11.2 + (dx ? k : 0),
+          );
+          group.add(zebraMesh);
+        }
+
+        // Solid stop bar (0.45m wide, 9.2m long) across oncoming traffic
+        const stopW = dx ? 0.45 : 9.2;
+        const stopL = dx ? 9.2 : 0.45;
+        const stopGeo = new THREE.PlaneGeometry(stopW, stopL);
+        stopGeo.rotateX(-Math.PI / 2);
+        const stopMesh = new THREE.Mesh(stopGeo, whiteMat);
+        stopMesh.position.set(
+          n.x + dx * 13.8 + (dz ? dz * 4.6 : 0),
+          0.025,
+          n.z + dz * 13.8 + (dx ? -dx * 4.6 : 0),
         );
-        group.add(zebraMesh);
+        group.add(stopMesh);
       }
-
-      // Solid stop bar (0.45m wide, 9.2m long) across oncoming traffic
-      const stopW = dx ? 0.45 : 9.2;
-      const stopL = dx ? 9.2 : 0.45;
-      const stopGeo = new THREE.PlaneGeometry(stopW, stopL);
-      stopGeo.rotateX(-Math.PI / 2);
-      const stopMesh = new THREE.Mesh(stopGeo, whiteMat);
-      stopMesh.position.set(
-        n.x + dx * 13.8 + (dz ? dz * 4.6 : 0),
-        0.025,
-        n.z + dz * 13.8 + (dx ? -dx * 4.6 : 0),
-      );
-      group.add(stopMesh);
     }
   }
 }

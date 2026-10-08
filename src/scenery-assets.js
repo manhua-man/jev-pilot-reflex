@@ -104,19 +104,25 @@ export class SceneryAssets {
     for (const mesh of this.treeMeshes) mesh.count = 0;
   }
   async streetlights() {
-    if (this.world.type === "highway") return;
+    if (this.world.type === "highway" || this.world.type === "alpine") return;
     const parts = await loadAsset("street_lamp_01", "lamp");
     if (!this.active) return;
     const locations = [];
     for (const edge of this.world.edges) {
       const a = this.world.byId[edge.a],
         b = this.world.byId[edge.b];
+      if (!a || !b) continue;
       const h = Math.atan2(b.x - a.x, a.z - b.z);
+      const roadW = edge.width || 20;
+      // Sidewalk starts at roadW / 2 (10m) and spans to roadW / 2 + 2.4 (12.4m).
+      // Placing lamppost at offset 11.2m ensures it stands on the sidewalk curb,
+      // with its curved arm reaching safely over the roadway.
+      const lampOffset = roadW / 2 + 1.2;
       for (let distance = 26; distance < edge.length - 20; distance += 42) {
         const side = Math.round(distance / 42) % 2 ? -1 : 1;
         locations.push({
-          x: a.x + Math.sin(h) * distance + Math.cos(h) * 7.25 * side,
-          z: a.z - Math.cos(h) * distance + Math.sin(h) * 7.25 * side,
+          x: a.x + Math.sin(h) * distance + Math.cos(h) * lampOffset * side,
+          z: a.z - Math.cos(h) * distance + Math.sin(h) * lampOffset * side,
           height: 6.8,
           rotation: -h + (side * Math.PI) / 2,
         });

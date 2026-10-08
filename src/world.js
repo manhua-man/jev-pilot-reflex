@@ -8,6 +8,7 @@ export const THEMES = {
     traffic: 28,
     buildings: 0.97,
     limit: 18,
+    laneOffset: 2.5,
   },
   town: {
     name: "Cedar Town",
@@ -16,6 +17,7 @@ export const THEMES = {
     traffic: 14,
     buildings: 0.62,
     limit: 14,
+    laneOffset: 2.5,
   },
   highway: {
     name: "Interstate 08",
@@ -465,7 +467,7 @@ export function makeRoute(world, ids, laneOffset) {
     return { ids, points, crossings, sections, length: points.at(-1)?.s || 0 };
   }
 
-  const lOffset = laneOffset ?? world.theme?.laneOffset ?? 4.8;
+  const lOffset = laneOffset ?? world.theme?.laneOffset ?? 2.5;
   const offset = (p, h) => move(p, h + Math.PI / 2, lOffset);
   for (let i = 0; i < nodes.length; i++) {
     const p = nodes[i],
@@ -491,7 +493,7 @@ export function makeRoute(world, ids, laneOffset) {
     if (Math.cos(hout - hin) < -0.99) {
       // Dead-end traffic makes a continuous turn into the opposite lane.
       const center = move(p, hin, -leadIn);
-      const rTurn = isAlpine ? lOffset : 4.8;
+      const rTurn = lOffset;
       for (let k = 1; k <= 24; k++) {
         const theta = (k / 24) * Math.PI;
         raw.push(
