@@ -1,9 +1,9 @@
 // Preserve the original visual quality on both phones and desktops.
 export const renderProfile = {
-  pixelRatio: 1.5,
+  pixelRatio: typeof window !== "undefined" && window.devicePixelRatio ? Math.min(window.devicePixelRatio, 1.25) : 1.0,
   antialias: true,
-  shadowSize: 2048,
+  shadowSize: 1536,
   detailedFoliage: true,
-  leafCards: 120,
-  anisotropy: 8,
+  leafCards: 80,
+  anisotropy: 4,
 };

@@ -4,13 +4,13 @@ import { U, patchMaterial, GLSL_NOISE, SHARED_DECL, HEIGHT_FOG_CODE } from './se
 import { dist, heading, move } from './math.js';
 
 const QUALITY = {
-    GRASS_COUNT: 13000,
-    SHADOW_MAP_SIZE: 2048,
-    MAX_PIXEL_RATIO: 1.5,
+    GRASS_COUNT: 4200,
+    SHADOW_MAP_SIZE: 1536,
+    MAX_PIXEL_RATIO: 1.25,
     USE_BLOOM: true,
-    MSAA_SAMPLES: 4,
+    MSAA_SAMPLES: 2,
     ADAPTIVE: false,
-    PARTICLES: { petals: 360, pollen: 240, leaves: 300, snow: 1700, fireflies: 80 }
+    PARTICLES: { petals: 220, pollen: 150, leaves: 200, snow: 900, fireflies: 60 }
 };
 
 function createSafeCanvas(w = 256, h = 256) {
@@ -2896,45 +2896,69 @@ class AlpineChunk {
         const baseGeo = getSharedGrassGeometry();
         const geo = baseGeo.clone();
         const mat = getSharedGrassMaterial();
-        const count = 9500;
+        const count = 3000;
         const mesh = new THREE.InstancedMesh(geo, mat, count);
         const attr = new Float32Array(count * 4);
         const CHUNK_SIZE = 15.0;
         const ox = (this.cx - 0.5) * CHUNK_SIZE;
         const oz = (this.cz - 0.5) * CHUNK_SIZE;
+
+        // Pre-filter road edges intersecting this chunk's bounding box (+ margin)
+        const localEdges = [];
+        if (this.world && this.world.edges && this.world.byId) {
+            for (const e of this.world.edges) {
+                const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                if (!a || !b) continue;
+                const minX = Math.min(a.x, b.x) - 3.5, maxX = Math.max(a.x, b.x) + 3.5;
+                const minZ = Math.min(a.z, b.z) - 3.5, maxZ = Math.max(a.z, b.z) + 3.5;
+                if (maxX >= ox && minX <= ox + CHUNK_SIZE && maxZ >= oz && minZ <= oz + CHUNK_SIZE) {
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (l2 > 0) {
+                        localEdges.push({
+                            ax: a.x, az: a.z, dx, dz, l2,
+                            marginSq: ((e.width || 2.8) / 2 + 0.55) ** 2
+                        });
+                    }
+                }
+            }
+        }
+
+        const isGenesis = (this.cx === 0 && this.cz === 0);
         let placed = 0;
-        for (let tries = 0; tries < count * 4 && placed < count; tries++) {
+        const maxTries = count * 3;
+        for (let tries = 0; tries < maxTries && placed < count; tries++) {
             const rx = ox + rand() * CHUNK_SIZE;
             const rz = oz + rand() * CHUNK_SIZE;
             const h = getContinuousAlpineHeight(rx, rz, this.world);
             // Do not grow grass on bare mountain peaks or water
             if (h > 2.2 || h < 0.05) continue;
-            // Exclusion masks for buildings, props, and steep rocky cliffs
-            if (Math.hypot(rx - 4.5, rz - -4.5) < 1.7) continue; // Chalet yard
-            if (Math.hypot(rx - 2.0, rz - -4.5) < 1.35) continue; // Windmill base
-            if (Math.hypot(rx - 5.75, rz - -2.45) < 1.1) continue; // Campfire circle
-            const slope = Math.hypot(
-                (getContinuousAlpineHeight(rx + 0.2, rz, this.world) - getContinuousAlpineHeight(rx - 0.2, rz, this.world)) / 0.4,
-                (getContinuousAlpineHeight(rx, rz + 0.2, this.world) - getContinuousAlpineHeight(rx, rz - 0.2, this.world)) / 0.4
-            );
-            if (slope > 0.55) continue; // Rocky slope
+
+            // Exclusion masks on genesis tile (chalet, windmill, campfire)
+            if (isGenesis) {
+                if ((rx - 4.5) ** 2 + (rz - -4.5) ** 2 < 2.89) continue; // Chalet yard (1.7m)
+                if ((rx - 2.0) ** 2 + (rz - -4.5) ** 2 < 1.82) continue; // Windmill base (1.35m)
+                if ((rx - 5.75) ** 2 + (rz - -2.45) ** 2 < 1.21) continue; // Campfire (1.1m)
+            }
+
+            // Fast road test against local chunk edges only
             let nearRoad = false;
-            if (this.world && this.world.edges && this.world.byId) {
-                for (const e of this.world.edges) {
-                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
-                    if (!a || !b) continue;
-                    const dx = b.x - a.x, dz = b.z - a.z;
-                    const l2 = dx * dx + dz * dz;
-                    if (!l2) continue;
-                    const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    const roadMargin = (e.width || 2.8) / 2 + 0.55;
-                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < roadMargin) {
-                        nearRoad = true;
-                        break;
-                    }
+            for (let i = 0; i < localEdges.length; i++) {
+                const ed = localEdges[i];
+                const t = clamp(((rx - ed.ax) * ed.dx + (rz - ed.az) * ed.dz) / ed.l2, 0, 1);
+                const dSq = (rx - (ed.ax + t * ed.dx)) ** 2 + (rz - (ed.az + t * ed.dz)) ** 2;
+                if (dSq < ed.marginSq) {
+                    nearRoad = true;
+                    break;
                 }
             }
             if (nearRoad) continue;
+
+            // Fast 2-sample slope check for steep rocky cliffs
+            const sX = (getContinuousAlpineHeight(rx + 0.25, rz, this.world) - h) * 4;
+            const sZ = (getContinuousAlpineHeight(rx, rz + 0.25, this.world) - h) * 4;
+            if (sX * sX + sZ * sZ > 0.3025) continue; // slope > 0.55
+
             _obj.position.set(rx, h - 0.02, rz);
             _obj.rotation.set((rand() - 0.5) * 0.14, rand() * Math.PI * 2, (rand() - 0.5) * 0.14);
             _obj.scale.setScalar(0.38 + rand() * 0.5);
@@ -2950,7 +2974,11 @@ class AlpineChunk {
         geo.setAttribute('aGrass', new THREE.InstancedBufferAttribute(attr, 4));
         mesh.receiveShadow = true;
         mesh.castShadow = false;
-        mesh.frustumCulled = false;
+        geo.boundingSphere = new THREE.Sphere(
+            new THREE.Vector3(ox + CHUNK_SIZE / 2, 1.0, oz + CHUNK_SIZE / 2),
+            CHUNK_SIZE * 0.85
+        );
+        mesh.frustumCulled = true;
         this.group.add(mesh);
     }
 
@@ -3874,40 +3902,36 @@ export class AlpinePassage {
         }
         this.time = (this.time || 0) + dt;
 
-        // Dynamic Chunk Streaming around player and camera view
+        // Dynamic Chunk Streaming around active focus (player or diorama center)
         const CHUNK_SIZE = 15.0;
-        const centers = [];
+        let fcx = 0, fcz = 0;
         if (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.z)) {
-            centers.push({
-                cx: Math.round(playerPos.x / CHUNK_SIZE),
-                cz: Math.round(playerPos.z / CHUNK_SIZE)
-            });
-        }
-        if (cameraPos && Number.isFinite(cameraPos.x) && Number.isFinite(cameraPos.z)) {
-            centers.push({
-                cx: Math.round(cameraPos.x / CHUNK_SIZE),
-                cz: Math.round(cameraPos.z / CHUNK_SIZE)
-            });
+            fcx = Math.round(playerPos.x / CHUNK_SIZE);
+            fcz = Math.round(playerPos.z / CHUNK_SIZE);
         }
 
-        if (centers.length > 0) {
-            // Ensure 5x5 window around all relevant centers (dx = -2..2, dz = -2..2)
-            for (const c of centers) {
-                for (let dx = -2; dx <= 2; dx++) {
-                    for (let dz = -2; dz <= 2; dz++) {
-                        this.ensureChunk(c.cx + dx, c.cz + dz);
+        // Keep 3x3 window around focus (dx = -1..1, dz = -1..1) = 9 chunks
+        // Throttle chunk creation to at most 1 chunk per frame to completely eliminate frame spikes
+        let createdThisFrame = false;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const cx = fcx + dx, cz = fcz + dz;
+                const key = `${cx},${cz}`;
+                if (!this.chunks.has(key)) {
+                    if (!createdThisFrame) {
+                        this.ensureChunk(cx, cz);
+                        createdThisFrame = true;
                     }
                 }
             }
+        }
 
-            // Dispose chunks far from all centers (preserving genesis diorama 0,0)
-            for (const [key, chunk] of this.chunks) {
-                if (chunk.cx === 0 && chunk.cz === 0) continue;
-                const nearAny = centers.some(c => Math.max(Math.abs(chunk.cx - c.cx), Math.abs(chunk.cz - c.cz)) <= 3);
-                if (!nearAny) {
-                    chunk.dispose();
-                    this.chunks.delete(key);
-                }
+        // Dispose chunks outside 3x3 window (preserving genesis diorama 0,0)
+        for (const [key, chunk] of this.chunks) {
+            if (chunk.cx === 0 && chunk.cz === 0) continue;
+            if (Math.abs(chunk.cx - fcx) > 1 || Math.abs(chunk.cz - fcz) > 1) {
+                chunk.dispose();
+                this.chunks.delete(key);
             }
         }
 
