@@ -219,29 +219,32 @@ function createSafeCanvas(w = 256, h = 256) {
             return h;
         }
 
+        function getRawAlpineMountainHeight(x, z) {
+            let h = BASE_HEIGHT;
+            const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
+            const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
+            const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
+            const massif = Math.pow(ridge1, 1.6) * 2.2 + Math.pow(ridge2, 1.4) * 0.8;
+            const rolling = valueNoise(x * 0.22, z * 0.22) * 0.6 + valueNoise(x * 0.55, z * 0.55) * 0.3;
+            h += massif + rolling;
+
+            const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
+            if (dEdge < 3.5) {
+                const blend = clamp(dEdge / 3.5, 0, 1);
+                const sBlend = blend * blend * (3 - 2 * blend);
+                const genH = getGenesisDioramaHeight(x, z);
+                h = lerp(genH, h, sBlend);
+            }
+            return h;
+        }
+
         function getContinuousAlpineHeight(x, z, world = null) {
             const inGenesis = Math.abs(x) <= 7.5 && Math.abs(z) <= 7.5;
             if (inGenesis) {
                 return getGenesisDioramaHeight(x, z, world);
             }
 
-            // Procedural terrain: continuous multi-octave mountain ridges & valleys
-            let h = BASE_HEIGHT;
-            const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
-            const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
-            const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
-            const massif = Math.pow(ridge1, 1.6) * 3.5 + Math.pow(ridge2, 1.4) * 1.2;
-            const rolling = valueNoise(x * 0.22, z * 0.22) * 0.8 + valueNoise(x * 0.55, z * 0.55) * 0.35;
-            h += massif + rolling;
-
-            // Seamless blend with genesis boundary
-            const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
-            if (dEdge < 3.5) {
-                const blend = clamp(dEdge / 3.5, 0, 1);
-                const sBlend = blend * blend * (3 - 2 * blend);
-                const genH = getGenesisDioramaHeight(x, z, world);
-                h = lerp(genH, h, sBlend);
-            }
+            let h = getRawAlpineMountainHeight(x, z);
 
             // Smooth road corridor and roundabout plateau carving
             if (world && world.edges && world.byId) {
@@ -251,18 +254,22 @@ function createSafeCanvas(w = 256, h = 256) {
                         if (o.type === "alpine_roundabout_center") {
                             const dRotary = Math.hypot(x - o.x, z - o.z);
                             const R = 4.2;
-                            if (dRotary < R + 2.8) {
-                                const baseRotaryH = 0.05 + valueNoise(o.x * 0.05, o.z * 0.05) * 0.5;
-                                if (dRotary < R - ROAD_WIDTH / 2) {
-                                    // Gentle landscaped center mound for stone fountain and pines (max +0.10m)
-                                    const mound = Math.max(0, 1 - (dRotary / Math.max(0.1, R - ROAD_WIDTH / 2)) ** 2) * 0.10;
+                            const rW = o.width || 2.2;
+                            if (dRotary < R + 3.8) {
+                                if (o.baseH === undefined) {
+                                    o.baseH = getRawAlpineMountainHeight(o.x, o.z);
+                                }
+                                const baseRotaryH = o.baseH;
+                                if (dRotary < R - rW / 2) {
+                                    // Gentle landscaped center mound for stone fountain and pines (max +0.12m)
+                                    const mound = Math.max(0, 1 - (dRotary / Math.max(0.1, R - rW / 2)) ** 2) * 0.12;
                                     return baseRotaryH + mound;
-                                } else if (dRotary <= R + ROAD_WIDTH / 2 + 0.6) {
+                                } else if (dRotary <= R + rW / 2 + 0.3) {
                                     // Road ring deck corridor is completely flat
                                     return baseRotaryH;
                                 } else {
                                     // Outer shoulder blends gently into surrounding mountains
-                                    const tOut = clamp((dRotary - (R + ROAD_WIDTH / 2 + 0.6)) / 2.2, 0, 1);
+                                    const tOut = clamp((dRotary - (R + rW / 2 + 0.3)) / 2.8, 0, 1);
                                     const sOut = tOut * tOut * (3 - 2 * tOut);
                                     return lerp(baseRotaryH, h, sOut);
                                 }
@@ -271,9 +278,10 @@ function createSafeCanvas(w = 256, h = 256) {
                     }
                 }
 
-                // 2. Standard road corridor carving
+                // 2. Standard road corridor carving: smoothly follows natural mountain grade
                 let minDist = Infinity;
-                let targetRoadH = 0.05;
+                let targetRoadH = h;
+                let matchedRoadWidth = 1.4;
                 for (const e of world.edges) {
                     const a = world.byId[e.a], b = world.byId[e.b];
                     if (!a || !b) continue;
@@ -285,14 +293,11 @@ function createSafeCanvas(w = 256, h = 256) {
                     const d = Math.hypot(x - px, z - pz);
                     if (d < minDist) {
                         minDist = d;
-                        targetRoadH = 0.05 + valueNoise(px * 0.05, pz * 0.05) * 0.5;
+                        matchedRoadWidth = e.width || 1.4;
+                        targetRoadH = getRawAlpineMountainHeight(px, pz);
                     }
                 }
-                if (dEdge < 5.0) {
-                    const roadBlend = clamp(dEdge / 5.0, 0, 1);
-                    targetRoadH = lerp(0.05, targetRoadH, roadBlend);
-                }
-                const roadShoulder = ROAD_WIDTH / 2 + 1.3;
+                const roadShoulder = matchedRoadWidth / 2 + 0.8;
                 const blendMargin = 1.8;
                 if (minDist < roadShoulder + blendMargin) {
                     const t = clamp((minDist - roadShoulder) / blendMargin, 0, 1);
@@ -2646,7 +2651,7 @@ class AlpineChunk {
                         const l2 = dx * dx + dz * dz;
                         if (!l2) continue;
                         const t = clamp(((x - a.x) * dx + (z - a.z) * dz) / l2, 0, 1);
-                        if (Math.hypot(x - (a.x + t * dx), z - (a.z + t * dz)) < ROAD_WIDTH / 2 + 0.35) {
+                        if (Math.hypot(x - (a.x + t * dx), z - (a.z + t * dz)) < (e.width || 1.4) / 2 + 0.35) {
                             isNearRoad = true;
                             break;
                         }
@@ -2690,7 +2695,7 @@ class AlpineChunk {
         const baseGeo = getSharedGrassGeometry();
         const geo = baseGeo.clone();
         const mat = getSharedGrassMaterial();
-        const count = 2200;
+        const count = 5500;
         const mesh = new THREE.InstancedMesh(geo, mat, count);
         const attr = new Float32Array(count * 4);
         const CHUNK_SIZE = 15.0;
@@ -2701,7 +2706,7 @@ class AlpineChunk {
             const rx = ox + rand() * CHUNK_SIZE;
             const rz = oz + rand() * CHUNK_SIZE;
             const h = getContinuousAlpineHeight(rx, rz, this.world);
-            if (h > 2.8 || h < 0.1) continue;
+            if (h > 4.2 || h < 0.05) continue;
             let nearRoad = false;
             if (this.world && this.world.edges && this.world.byId) {
                 for (const e of this.world.edges) {
@@ -2711,7 +2716,8 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 0.38) {
+                    const roadMargin = (e.width || 1.4) / 2 + 0.38;
+                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < roadMargin) {
                         nearRoad = true;
                         break;
                     }
@@ -2751,13 +2757,13 @@ class AlpineChunk {
         const birchTrunk = patchMaterial(stdMat(0xd8d4cd, 0.85), { key: 'birch-trunk', worldNormal: true, fragmentColor: snowDustCode('0.8') });
         const birchLeaves = patchMaterial(stdMat(0x6b8e23, 0.85), { key: 'birch-leaves', worldNormal: true, fragmentColor: snowDustCode('0.85') });
 
-        // Natural Alpine Trees (26 trees per chunk)
-        const treeCount = 26;
+        // Natural Alpine Trees (58 trees per chunk with dense pine groves & birches)
+        const treeCount = 58;
         for (let k = 0; k < treeCount; k++) {
-            const rx = ox + 1.2 + (hash(this.cx * 73 + k * 17, this.cz * 41 + k * 11) % 1) * (CHUNK_SIZE - 2.4);
-            const rz = oz + 1.2 + (hash(this.cz * 59 + k * 23, this.cx * 31 + k * 13) % 1) * (CHUNK_SIZE - 2.4);
+            const rx = ox + 1.0 + (hash(this.cx * 73 + k * 17, this.cz * 41 + k * 11) % 1) * (CHUNK_SIZE - 2.0);
+            const rz = oz + 1.0 + (hash(this.cz * 59 + k * 23, this.cx * 31 + k * 13) % 1) * (CHUNK_SIZE - 2.0);
             const h = getContinuousAlpineHeight(rx, rz, this.world);
-            if (h > 3.6 || h < 0.15) continue;
+            if (h > 4.2 || h < 0.1) continue;
 
             let nearRoad = false;
             if (this.world && this.world.edges && this.world.byId) {
@@ -2768,7 +2774,8 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < ROAD_WIDTH / 2 + 1.45) {
+                    const treeMargin = (e.width || 1.4) / 2 + 1.25;
+                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < treeMargin) {
                         nearRoad = true;
                         break;
                     }
@@ -2796,14 +2803,100 @@ class AlpineChunk {
             }
         }
 
-        // Mountain Boulders
-        const rockCount = 10;
+        // Mountain Boulders with snow dusting
+        const rockCount = 14;
         for (let j = 0; j < rockCount; j++) {
             const bx = ox + 1.0 + (hash(this.cx * 43 + j * 29, this.cz * 67 + j * 7) % 1) * (CHUNK_SIZE - 2.0);
             const bz = oz + 1.0 + (hash(this.cz * 37 + j * 19, this.cx * 53 + j * 13) % 1) * (CHUNK_SIZE - 2.0);
             const bh = getContinuousAlpineHeight(bx, bz, this.world);
-            if (bh > 4.2 || bh < 0.2) continue;
-            const bs = 0.14 + (hash(j * 17, this.cx * 11) % 1) * 0.26;
+            if (bh > 4.5 || bh < 0.15) continue;
+            const bs = 0.16 + (hash(j * 17, this.cx * 11) % 1) * 0.32;
+
+            let nearRoad = false;
+            if (this.world && this.world.edges && this.world.byId) {
+                for (const e of this.world.edges) {
+                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((bx - a.x) * dx + (bz - a.z) * dz) / l2, 0, 1);
+                    const rockMargin = (e.width || 1.4) / 2 + bs + 0.35;
+                    if (Math.hypot(bx - (a.x + t * dx), bz - (a.z + t * dz)) < rockMargin) {
+                        nearRoad = true;
+                        break;
+                    }
+                }
+            }
+            if (nearRoad) continue;
+
+            batch.add(new THREE.DodecahedronGeometry(bs), stoneMat, bx, bh + bs * 0.45, bz, (rand() - 0.5) * 0.3, rand() * Math.PI, 0);
+        }
+
+        // Swiss Alpine Log Cabins in extended chunks (nestled beside the road)
+        if (Math.abs(this.cx) > 0 || Math.abs(this.cz) > 0) {
+            const cabinSpots = [
+                { rx: ox + 4.2, rz: oz + 4.5 },
+                { rx: ox + 10.8, rz: oz + 10.5 }
+            ];
+            for (const sp of cabinSpots) {
+                const chY = getContinuousAlpineHeight(sp.rx, sp.rz, this.world);
+                let roadDist = 999;
+                if (this.world && this.world.edges && this.world.byId) {
+                    for (const e of this.world.edges) {
+                        const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                        if (!a || !b) continue;
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const l2 = dx * dx + dz * dz;
+                        if (!l2) continue;
+                        const t = clamp(((sp.rx - a.x) * dx + (sp.rz - a.z) * dz) / l2, 0, 1);
+                        const d = Math.hypot(sp.rx - (a.x + t * dx), sp.rz - (a.z + t * dz));
+                        if (d < roadDist) roadDist = d;
+                    }
+                }
+                if (roadDist >= 3.2 && roadDist <= 6.8 && chY >= 0.2 && chY <= 2.8) {
+                    const chScale = 0.72;
+                    batch.add(new THREE.BoxGeometry(1.6 * chScale, 0.6 * chScale, 1.4 * chScale), stoneMat, sp.rx, chY + 0.3 * chScale, sp.rz);
+                    batch.add(new THREE.BoxGeometry(1.45 * chScale, 0.8 * chScale, 1.25 * chScale), trunkMat, sp.rx, chY + 0.9 * chScale, sp.rz);
+                    batch.add(new THREE.ConeGeometry(1.15 * chScale, 0.75 * chScale, 4), woodRail, sp.rx, chY + 1.6 * chScale, sp.rz, 0, Math.PI / 4, 0);
+                    batch.add(new THREE.ConeGeometry(1.18 * chScale, 0.28 * chScale, 4), snowSlabMaterial, sp.rx, chY + 1.82 * chScale, sp.rz, 0, Math.PI / 4, 0);
+                    batch.add(new THREE.BoxGeometry(0.22 * chScale, 0.9 * chScale, 0.22 * chScale), stoneMat, sp.rx + 0.35 * chScale, chY + 1.65 * chScale, sp.rz + 0.25 * chScale);
+                    const windowGlowMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a18, emissiveIntensity: 2.2, roughness: 0.3 });
+                    batch.add(new THREE.BoxGeometry(0.28 * chScale, 0.28 * chScale, 0.05 * chScale), windowGlowMat, sp.rx, chY + 0.85 * chScale, sp.rz + 0.63 * chScale);
+                }
+            }
+        }
+
+        // Alpine Wildflowers (yellow buttercups & pink edelweiss blossoms)
+        const flowerCount = 38;
+        const buttercupMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 });
+        const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 });
+        for (let f = 0; f < flowerCount; f++) {
+            const fx = ox + 1.0 + (hash(this.cx * 53 + f * 19, this.cz * 31 + f * 29) % 1) * (CHUNK_SIZE - 2.0);
+            const fz = oz + 1.0 + (hash(this.cz * 47 + f * 23, this.cx * 61 + f * 17) % 1) * (CHUNK_SIZE - 2.0);
+            const fy = getContinuousAlpineHeight(fx, fz, this.world);
+            if (fy > 3.0 || fy < 0.1) continue;
+
+            let nearRoad = false;
+            if (this.world && this.world.edges && this.world.byId) {
+                for (const e of this.world.edges) {
+                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                    if (!a || !b) continue;
+                    const dx = b.x - a.x, dz = b.z - a.z;
+                    const l2 = dx * dx + dz * dz;
+                    if (!l2) continue;
+                    const t = clamp(((fx - a.x) * dx + (fz - a.z) * dz) / l2, 0, 1);
+                    const flowerMargin = (e.width || 1.4) / 2 + 0.35;
+                    if (Math.hypot(fx - (a.x + t * dx), fz - (a.z + t * dz)) < flowerMargin) {
+                        nearRoad = true;
+                        break;
+                    }
+                }
+            }
+            if (nearRoad) continue;
+
+            const fMat = f % 2 === 0 ? buttercupMat : edelweissMat;
+            batch.add(new THREE.DodecahedronGeometry(0.045), fMat, fx, fy + 0.05, fz);
         }
 
         // Road guardrails (clean timber posts and non-protruding horizontal rails)
@@ -2824,10 +2917,11 @@ class AlpineChunk {
                 const endMargin = 1.2;
 
                 const hEdge = heading(a, b);
+                const curWidth = e.width || 1.4;
                 for (let stepAlong = startMargin; stepAlong <= len - endMargin; stepAlong += 1.6) {
                     const pAlong = move(a, hEdge, stepAlong);
                     for (const side of [-1, 1]) {
-                        const gp = move(pAlong, hEdge + Math.PI / 2, side * (ROAD_WIDTH / 2 + 0.18));
+                        const gp = move(pAlong, hEdge + Math.PI / 2, side * (curWidth / 2 + 0.18));
                         if (Math.abs(gp.x) <= 7.5 && Math.abs(gp.z) <= 7.5) continue;
                         if (gp.x < ox || gp.x >= ox + CHUNK_SIZE || gp.z < oz || gp.z >= oz + CHUNK_SIZE) continue;
                         if (isNearOtherRoadEdge(gp.x, gp.z, e.id, this.world)) continue;
@@ -2967,7 +3061,39 @@ class AlpineChunk {
             const totalLen = dist(a, b);
             if (totalLen < 0.05) continue;
             const width = e.width || 1.4;
-            const halfW = width / 2;
+
+            // Smooth width taper: if adjacent edge is narrower, flair smoothly over transition zone
+            let wA = width;
+            let wB = width;
+            if (this.world && this.world.edges) {
+                const adjA = this.world.edges.filter(ed => ed !== e && (ed.a === a.id || ed.b === a.id));
+                if (adjA.length === 1) {
+                    const minAdjA = adjA[0].width || 1.4;
+                    if (minAdjA < width) wA = minAdjA;
+                }
+                const adjB = this.world.edges.filter(ed => ed !== e && (ed.a === b.id || ed.b === b.id));
+                if (adjB.length === 1) {
+                    const minAdjB = adjB[0].width || 1.4;
+                    if (minAdjB < width) wB = minAdjB;
+                }
+            }
+
+            const taperLenA = Math.min(3.2, totalLen * 0.45);
+            const taperLenB = Math.min(3.2, totalLen * 0.45);
+
+            const getWidthAt = (s) => {
+                if (wA < width && s < taperLenA) {
+                    const t = s / taperLenA;
+                    const st = t * t * (3 - 2 * t);
+                    return wA + (width - wA) * st;
+                }
+                if (wB < width && s > totalLen - taperLenB) {
+                    const t = (totalLen - s) / taperLenB;
+                    const st = t * t * (3 - 2 * t);
+                    return wB + (width - wB) * st;
+                }
+                return width;
+            };
 
             const normA = getNodeMiter(a, b, true);
             const normB = getNodeMiter(a, b, false);
@@ -2981,6 +3107,12 @@ class AlpineChunk {
                 const s0 = i * step;
                 const s1 = Math.min((i + 1) * step, totalLen);
                 if (s1 - s0 < 0.02) continue;
+
+                const segW0 = getWidthAt(s0);
+                const segW1 = getWidthAt(s1);
+                const segHalfW0 = segW0 / 2;
+                const segHalfW1 = segW1 / 2;
+                const segWAvg = (segW0 + segW1) / 2;
 
                 const u0 = s0 / totalLen;
                 const u1 = s1 / totalLen;
@@ -3023,10 +3155,10 @@ class AlpineChunk {
                 const nx1 = (1 - u1) * normA.x + u1 * normB.x;
                 const nz1 = (1 - u1) * normA.z + u1 * normB.z;
 
-                const LA2D = { x: p0x - nx0 * halfW, z: p0z - nz0 * halfW };
-                const RA2D = { x: p0x + nx0 * halfW, z: p0z + nz0 * halfW };
-                const LB2D = { x: p1x - nx1 * halfW, z: p1z - nz1 * halfW };
-                const RB2D = { x: p1x + nx1 * halfW, z: p1z + nz1 * halfW };
+                const LA2D = { x: p0x - nx0 * segHalfW0, z: p0z - nz0 * segHalfW0 };
+                const RA2D = { x: p0x + nx0 * segHalfW0, z: p0z + nz0 * segHalfW0 };
+                const LB2D = { x: p1x - nx1 * segHalfW1, z: p1z - nz1 * segHalfW1 };
+                const RB2D = { x: p1x + nx1 * segHalfW1, z: p1z + nz1 * segHalfW1 };
 
                 const yCA = baseH0 + 0.028;
                 const yCB = baseH1 + 0.028;
@@ -3059,17 +3191,62 @@ class AlpineChunk {
                 const RB_bot = { x: RB.x, y: yRB - 0.45, z: RB.z };
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
-                // 3. Dashed yellow center line (0.8m period, 0.06m width)
-                // Suppress center dashes in junction throats to prevent intersecting crosses
+                // 3. Center markings & Multi-lane Dividers
                 const skipCenter = (isJctA && s0 < 1.4) || (isJctB && s1 > totalLen - 1.4);
                 if (!skipCenter) {
-                    const dashStep = Math.floor(s0 / 0.8);
-                    if (dashStep % 2 === 0) {
-                        const DLA = { x: p0x - nx0 * 0.03, y: yCA + 0.005, z: p0z - nz0 * 0.03 };
-                        const DRA = { x: p0x + nx0 * 0.03, y: yCA + 0.005, z: p0z + nz0 * 0.03 };
-                        const DLB = { x: p1x - nx1 * 0.03, y: yCB + 0.005, z: p1z - nz1 * 0.03 };
-                        const DRB = { x: p1x + nx1 * 0.03, y: yCB + 0.005, z: p1z + nz1 * 0.03 };
+                    if (segWAvg >= 2.5) {
+                        // 4-Lane Alpine Parkway / Expressway:
+                        // Dual solid yellow centerlines
+                        [-0.045, 0.045].forEach(cyOff => {
+                            const DLA = { x: p0x - nx0 * (cyOff + 0.015), y: yCA + 0.005, z: p0z - nz0 * (cyOff + 0.015) };
+                            const DRA = { x: p0x - nx0 * (cyOff - 0.015), y: yCA + 0.005, z: p0z - nz0 * (cyOff - 0.015) };
+                            const DLB = { x: p1x - nx1 * (cyOff + 0.015), y: yCB + 0.005, z: p1z - nz1 * (cyOff + 0.015) };
+                            const DRB = { x: p1x - nx1 * (cyOff - 0.015), y: yCB + 0.005, z: p1z - nz1 * (cyOff - 0.015) };
+                            pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+                        });
+
+                        // White dashed lane dividers for left and right carriageways
+                        const dashStep = Math.floor(s0 / 0.8);
+                        if (dashStep % 2 === 0) {
+                            [-1, 1].forEach(side => {
+                                const divOff0 = side * segHalfW0 * 0.5;
+                                const divOff1 = side * segHalfW1 * 0.5;
+                                const WLA = { x: p0x - nx0 * (divOff0 + 0.018), y: yCA + 0.005, z: p0z - nz0 * (divOff0 + 0.018) };
+                                const WRA = { x: p0x - nx0 * (divOff0 - 0.018), y: yCA + 0.005, z: p0z - nz0 * (divOff0 - 0.018) };
+                                const WLB = { x: p1x - nx1 * (divOff1 + 0.018), y: yCB + 0.005, z: p1z - nz1 * (divOff1 + 0.018) };
+                                const WRB = { x: p1x - nx1 * (divOff1 - 0.018), y: yCB + 0.005, z: p1z - nz1 * (divOff1 - 0.018) };
+                                pushQuad(whitePos, whiteNorm, WLA, WRA, WLB, WRB);
+                            });
+                        }
+                    } else if (segWAvg >= 1.9) {
+                        // 3-Lane Mountain Pass (Climbing / Passing Section):
+                        // Solid yellow center divider + white dashed overtaking lane line
+                        const DLA = { x: p0x - nx0 * (-segHalfW0 * 0.33 + 0.02), y: yCA + 0.005, z: p0z - nz0 * (-segHalfW0 * 0.33 + 0.02) };
+                        const DRA = { x: p0x - nx0 * (-segHalfW0 * 0.33 - 0.02), y: yCA + 0.005, z: p0z - nz0 * (-segHalfW0 * 0.33 - 0.02) };
+                        const DLB = { x: p1x - nx1 * (-segHalfW1 * 0.33 + 0.02), y: yCB + 0.005, z: p1z - nz1 * (-segHalfW1 * 0.33 + 0.02) };
+                        const DRB = { x: p1x - nx1 * (-segHalfW1 * 0.33 - 0.02), y: yCB + 0.005, z: p1z - nz1 * (-segHalfW1 * 0.33 - 0.02) };
                         pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+
+                        const dashStep = Math.floor(s0 / 0.8);
+                        if (dashStep % 2 === 0) {
+                            const divOff0 = segHalfW0 * 0.33;
+                            const divOff1 = segHalfW1 * 0.33;
+                            const WLA = { x: p0x - nx0 * (divOff0 + 0.018), y: yCA + 0.005, z: p0z - nz0 * (divOff0 + 0.018) };
+                            const WRA = { x: p0x - nx0 * (divOff0 - 0.018), y: yCA + 0.005, z: p0z - nz0 * (divOff0 - 0.018) };
+                            const WLB = { x: p1x - nx1 * (divOff1 + 0.018), y: yCB + 0.005, z: p1z - nz1 * (divOff1 + 0.018) };
+                            const WRB = { x: p1x - nx1 * (divOff1 - 0.018), y: yCB + 0.005, z: p1z - nz1 * (divOff1 - 0.018) };
+                            pushQuad(whitePos, whiteNorm, WLA, WRA, WLB, WRB);
+                        }
+                    } else {
+                        // 2-Lane Cozy Ridge / Bridge: single dashed center line
+                        const dashStep = Math.floor(s0 / 0.8);
+                        if (dashStep % 2 === 0) {
+                            const DLA = { x: p0x - nx0 * 0.025, y: yCA + 0.005, z: p0z - nz0 * 0.025 };
+                            const DRA = { x: p0x + nx0 * 0.025, y: yCA + 0.005, z: p0z + nz0 * 0.025 };
+                            const DLB = { x: p1x - nx1 * 0.025, y: yCB + 0.005, z: p1z - nz1 * 0.025 };
+                            const DRB = { x: p1x + nx1 * 0.025, y: yCB + 0.005, z: p1z - nz1 * 0.025 };
+                            pushQuad(yellowPos, yellowNorm, DLA, DRA, DLB, DRB);
+                        }
                     }
                 }
 
@@ -3092,19 +3269,19 @@ class AlpineChunk {
 
                 if (!skipLeft) {
                     // Left edge marking (inset 0.04m - 0.08m from edge, 0.04m wide)
-                    const WLA1 = { x: p0x - nx0 * (halfW - 0.04), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.04) };
-                    const WLA2 = { x: p0x - nx0 * (halfW - 0.08), y: yLA + 0.004, z: p0z - nz0 * (halfW - 0.08) };
-                    const WLB1 = { x: p1x - nx1 * (halfW - 0.04), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.04) };
-                    const WLB2 = { x: p1x - nx1 * (halfW - 0.08), y: yLB + 0.004, z: p1z - nz1 * (halfW - 0.08) };
+                    const WLA1 = { x: p0x - nx0 * (segHalfW0 - 0.04), y: yLA + 0.004, z: p0z - nz0 * (segHalfW0 - 0.04) };
+                    const WLA2 = { x: p0x - nx0 * (segHalfW0 - 0.08), y: yLA + 0.004, z: p0z - nz0 * (segHalfW0 - 0.08) };
+                    const WLB1 = { x: p1x - nx1 * (segHalfW1 - 0.04), y: yLB + 0.004, z: p1z - nz1 * (segHalfW1 - 0.04) };
+                    const WLB2 = { x: p1x - nx1 * (segHalfW1 - 0.08), y: yLB + 0.004, z: p1z - nz1 * (segHalfW1 - 0.08) };
                     pushQuad(whitePos, whiteNorm, WLA1, WLA2, WLB1, WLB2);
                 }
 
                 if (!skipRight) {
                     // Right edge marking (0.04m wide)
-                    const WRA1 = { x: p0x + nx0 * (halfW - 0.08), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.08) };
-                    const WRA2 = { x: p0x + nx0 * (halfW - 0.04), y: yRA + 0.004, z: p0z + nz0 * (halfW - 0.04) };
-                    const WRB1 = { x: p1x + nx1 * (halfW - 0.08), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.08) };
-                    const WRB2 = { x: p1x + nx1 * (halfW - 0.04), y: yRB + 0.004, z: p1z + nz1 * (halfW - 0.04) };
+                    const WRA1 = { x: p0x + nx0 * (segHalfW0 - 0.08), y: yRA + 0.004, z: p0z + nz0 * (segHalfW0 - 0.08) };
+                    const WRA2 = { x: p0x + nx0 * (segHalfW0 - 0.04), y: yRA + 0.004, z: p0z + nz0 * (segHalfW0 - 0.04) };
+                    const WRB1 = { x: p1x + nx1 * (segHalfW1 - 0.08), y: yRB + 0.004, z: p1z + nz1 * (segHalfW1 - 0.08) };
+                    const WRB2 = { x: p1x + nx1 * (segHalfW1 - 0.04), y: yRB + 0.004, z: p1z + nz1 * (segHalfW1 - 0.04) };
                     pushQuad(whitePos, whiteNorm, WRA1, WRA2, WRB1, WRB2);
                 }
             }
@@ -3228,10 +3405,10 @@ export class AlpinePassage {
         }
 
         if (centers.length > 0) {
-            // Ensure 3x3 window around all relevant centers
+            // Ensure 5x5 window around all relevant centers (dx = -2..2, dz = -2..2)
             for (const c of centers) {
-                for (let dx = -1; dx <= 1; dx++) {
-                    for (let dz = -1; dz <= 1; dz++) {
+                for (let dx = -2; dx <= 2; dx++) {
+                    for (let dz = -2; dz <= 2; dz++) {
                         this.ensureChunk(c.cx + dx, c.cz + dz);
                     }
                 }
@@ -3240,7 +3417,7 @@ export class AlpinePassage {
             // Dispose chunks far from all centers (preserving genesis diorama 0,0)
             for (const [key, chunk] of this.chunks) {
                 if (chunk.cx === 0 && chunk.cz === 0) continue;
-                const nearAny = centers.some(c => Math.max(Math.abs(chunk.cx - c.cx), Math.abs(chunk.cz - c.cz)) <= 2);
+                const nearAny = centers.some(c => Math.max(Math.abs(chunk.cx - c.cx), Math.abs(chunk.cz - c.cz)) <= 3);
                 if (!nearAny) {
                     chunk.dispose();
                     this.chunks.delete(key);
