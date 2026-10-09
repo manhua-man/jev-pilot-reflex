@@ -1015,6 +1015,16 @@ function createSafeCanvas(w = 256, h = 256) {
                     }
                 `
             });
+            mat.customProgramCacheKey = () => 'alpine-water';
+            return mat;
+        }
+
+        let _sharedProceduralWaterMat = null;
+        function getSharedProceduralWaterMaterial() {
+            if (!_sharedProceduralWaterMat) {
+                _sharedProceduralWaterMat = createAlpineWaterMaterial();
+            }
+            return _sharedProceduralWaterMat;
         }
 
         class Stream {
@@ -1217,18 +1227,11 @@ function createSafeCanvas(w = 256, h = 256) {
                     const railSnow = new THREE.Mesh(snowSlab(0.06, 0.035, 2.46), snowSlabMaterial);
                     railSnow.position.set(side * 1.48, 0.522, 0);
                     bridge.add(curbSnow, railSnow);
-
-                    const light = new THREE.PointLight(0xff9a3c, 0.6, 3.4, 1.8);
-                    light.position.set(side * 1.58, 0.84, side * 0.88);
-                    bridge.add(light);
-                    (this.lights ??= []).push(light);
                 });
                 b.build(bridge);
                 scene.add(bridge);
             }
             update(T) {
-                const val = (T && typeof T.bridge === 'number' && !isNaN(T.bridge)) ? T.bridge : 0;
-                for (const l of this.lights) l.intensity = val;
             }
         }
 
@@ -1819,12 +1822,10 @@ function createSafeCanvas(w = 256, h = 256) {
                 });
                 b.build(hut);
 
-                // Door lantern (no shadow map: cube shadows are costly)
+                // Door lantern (emissive bloom cylinder, no dynamic light to prevent shader recompilations)
                 const lanternGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.04, 0.15, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.6, 0.7), toneMapped: false }));
                 lanternGlass.position.set(-0.4, 1.33, 0.82);
-                this.lantern = new THREE.PointLight(0xff7711, 1.6, 5, 1.2);
-                this.lantern.position.set(-0.4, 1.33, 0.95);
-                hut.add(lanternGlass, this.lantern);
+                hut.add(lanternGlass);
                 this.lanternGlass = lanternGlass;
                 scene.add(hut);
 
@@ -1833,8 +1834,7 @@ function createSafeCanvas(w = 256, h = 256) {
             }
             update(T) {
                 const val = (T && typeof T.lantern === 'number' && !isNaN(T.lantern)) ? T.lantern : 0;
-                this.lantern.intensity = val;
-                this.lanternGlass.material.color.setRGB(0.6 + T.lantern * 0.5, 0.45 + T.lantern * 0.36, 0.2 + T.lantern * 0.15);
+                this.lanternGlass.material.color.setRGB(0.6 + val * 0.5, 0.45 + val * 0.36, 0.2 + val * 0.15);
             }
         }
 
@@ -1843,17 +1843,9 @@ function createSafeCanvas(w = 256, h = 256) {
            lattice sails whose cloth billows (vertex shader) and a turning fantail.
            Reads: uWindTime/uTime (cloth), uSnowCoverage (cap snow, plinth dusting).
            ════════════════════════════════════════════════════════════════════ */
-        class Windmill {
-            constructor(scene, glowMaterials, customPos = null, customRotY = null) {
-                const mill = new THREE.Group();
-                if (customPos) {
-                    mill.position.copy(customPos);
-                    mill.rotation.y = (customRotY !== null) ? customRotY : 0;
-                } else {
-                    mill.position.set(WINDMILL_X, getTerrainHeight(WINDMILL_X, WINDMILL_Z), WINDMILL_Z);
-                    mill.rotation.y = Math.atan2(-WINDMILL_X, -WINDMILL_Z);
-                }
-
+        let _sharedWindmillMaterials = null;
+        function getSharedWindmillMaterials(glowMaterials) {
+            if (!_sharedWindmillMaterials) {
                 const stone = patchMaterial(stdMat(0x7d766e, 0.95), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
                 const plaster = stdMat(0xe3dccb, 0.9);
                 const trim = patchMaterial(stdMat(0x4a3121, 0.8), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
@@ -1872,6 +1864,23 @@ function createSafeCanvas(w = 256, h = 256) {
                         `
                     }
                 );
+                _sharedWindmillMaterials = { stone, plaster, trim, dark, roof, winMat, sailMat };
+            }
+            return _sharedWindmillMaterials;
+        }
+
+        class Windmill {
+            constructor(scene, glowMaterials, customPos = null, customRotY = null) {
+                const mill = new THREE.Group();
+                if (customPos) {
+                    mill.position.copy(customPos);
+                    mill.rotation.y = (customRotY !== null) ? customRotY : 0;
+                } else {
+                    mill.position.set(WINDMILL_X, getTerrainHeight(WINDMILL_X, WINDMILL_Z), WINDMILL_Z);
+                    mill.rotation.y = Math.atan2(-WINDMILL_X, -WINDMILL_Z);
+                }
+
+                const { stone, plaster, trim, dark, roof, winMat, sailMat } = getSharedWindmillMaterials(glowMaterials);
 
                 const b = new StaticBatch();
                 b.add(new THREE.CylinderGeometry(0.86, 0.94, 0.5, 8), stone, 0, 0.05, 0);
@@ -2033,9 +2042,6 @@ function createSafeCanvas(w = 256, h = 256) {
                     camp.add(flame);
                     this.flames.push(flame);
                 }
-                this.light = new THREE.PointLight(0xff6b20, 1.5, 4.4, 1.7);
-                this.light.position.set(0, 0.65, 0);
-                camp.add(this.light);
                 scene.add(camp);
             }
             update(t, fire) {
@@ -2047,7 +2053,6 @@ function createSafeCanvas(w = 256, h = 256) {
                     f.material.opacity = (0.78 + flicker * 0.14) * Math.min(1, fire * 1.5);
                 });
                 const flick = 0.92 + 0.08 * Math.sin(t * 17.3) * Math.sin(t * 7.1);
-                this.light.intensity = 2.2 * fire * flick;
                 this.emberMat.emissiveIntensity = 0.15 + fire * 3.2 * flick;
             }
         }
@@ -2379,13 +2384,10 @@ function createSafeCanvas(w = 256, h = 256) {
            CHIMNEY SMOKE — CPU pool with reset/age, drawn as one InstancedMesh with
            per-instance alpha. Reads: season.smoke (emission), time.night (tint).
            ════════════════════════════════════════════════════════════════════ */
-        class ChimneySmoke {
-            constructor(scene, origin, count = 26) {
-                this.origin = origin || new THREE.Vector3(HUT_X, getTerrainHeight(HUT_X, HUT_Z) + 1.8, HUT_Z);
-                this.alpha = new Float32Array(count);
-                const geo = new THREE.DodecahedronGeometry(0.12, 1);
-                geo.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
-                this.material = patchMaterial(
+        let _sharedSmokeMaterial = null;
+        function getSharedSmokeMaterial() {
+            if (!_sharedSmokeMaterial) {
+                _sharedSmokeMaterial = patchMaterial(
                     new THREE.MeshStandardMaterial({ color: 0xa0a0a0, roughness: 0.95, transparent: true, depthWrite: false, flatShading: true }),
                     {
                         key: 'smoke', heightFog: false,
@@ -2395,6 +2397,17 @@ function createSafeCanvas(w = 256, h = 256) {
                         diffuse: 'vec4 diffuseColor = vec4( diffuse, opacity * vAlpha );'
                     }
                 );
+            }
+            return _sharedSmokeMaterial;
+        }
+
+        class ChimneySmoke {
+            constructor(scene, origin, count = 26) {
+                this.origin = origin || new THREE.Vector3(HUT_X, getTerrainHeight(HUT_X, HUT_Z) + 1.8, HUT_Z);
+                this.alpha = new Float32Array(count);
+                const geo = new THREE.DodecahedronGeometry(0.12, 1);
+                geo.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+                this.material = getSharedSmokeMaterial();
                 this.mesh = new THREE.InstancedMesh(geo, this.material, count);
                 this.mesh.frustumCulled = false;
                 this.particles = Array.from({ length: count }, (_, i) => ({
@@ -2772,6 +2785,7 @@ let _sharedButtercupMat = null;
 let _sharedEdelweissMat = null;
 let _sharedReflectorMat = null;
 let _sharedWindowGlowMat = null;
+let _sharedCabinLanternMat = null;
 function getSharedPropsMaterials() {
     if (!_sharedStoneMat) {
         const dusted = (color) => patchMaterial(stdMat(color, 0.9), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
@@ -2790,6 +2804,8 @@ function getSharedPropsMaterials() {
         _sharedEdelweissMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 });
         _sharedReflectorMat = new THREE.MeshStandardMaterial({ color: 0xffe5a1, emissive: 0xffa800, emissiveIntensity: 0.9, toneMapped: false });
         _sharedWindowGlowMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a18, emissiveIntensity: 2.2, roughness: 0.3 });
+        _sharedCabinLanternMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.6, 0.7), toneMapped: false });
+        _sharedCabinLanternMat.customProgramCacheKey = () => 'cabin-lantern';
     }
     return {
         stoneMat: _sharedStoneMat,
@@ -2799,7 +2815,8 @@ function getSharedPropsMaterials() {
         buttercupMat: _sharedButtercupMat,
         edelweissMat: _sharedEdelweissMat,
         reflectorMat: _sharedReflectorMat,
-        windowGlowMat: _sharedWindowGlowMat
+        windowGlowMat: _sharedWindowGlowMat,
+        lanternMat: _sharedCabinLanternMat
     };
 }
 
@@ -2967,7 +2984,7 @@ class AlpineChunk {
 
     buildGrass() {
         const baseGeo = getSharedGrassGeometry();
-        const geo = baseGeo;
+        const geo = baseGeo.clone();
         const mat = getSharedGrassMaterial();
         const count = 3000;
         const mesh = new THREE.InstancedMesh(geo, mat, count);
@@ -3048,7 +3065,8 @@ class AlpineChunk {
             buttercupMat,
             edelweissMat,
             reflectorMat,
-            windowGlowMat
+            windowGlowMat,
+            lanternMat
         } = getSharedPropsMaterials();
 
         const sharedWoodGeo = getSharedDeciduousWoodGeometry();
@@ -3202,11 +3220,8 @@ class AlpineChunk {
                         batch.box(woodRail, 0.03 * chScale, 0.04 * chScale, 0.45 * chScale, fx, fy + 0.28 * chScale, fz, 0, -fa, 0);
                     }
 
-                    // Glowing entry door lantern with warm light
-                    batch.add(new THREE.CylinderGeometry(0.05 * chScale, 0.035 * chScale, 0.14 * chScale, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.6, 0.7), toneMapped: false }), sp.rx - 0.3 * chScale, chY + 0.95 * chScale, sp.rz + 0.65 * chScale);
-                    const lanternLight = new THREE.PointLight(0xff7711, 0.9, 4.0, 1.4);
-                    lanternLight.position.set(sp.rx - 0.3 * chScale, chY + 0.95 * chScale, sp.rz + 0.68 * chScale);
-                    this.group.add(lanternLight);
+                    // Glowing entry door lantern with warm light (emissive bloom cylinder, no dynamic light to prevent shader recompilation)
+                    batch.add(new THREE.CylinderGeometry(0.05 * chScale, 0.035 * chScale, 0.14 * chScale, 6), lanternMat, sp.rx - 0.3 * chScale, chY + 0.95 * chScale, sp.rz + 0.65 * chScale);
 
                     // Animated Chimney Smoke Curling in Alpine Wind
                     const chimneyPos = new THREE.Vector3(sp.rx + 0.35 * chScale, chY + 2.12 * chScale, sp.rz + 0.25 * chScale);
@@ -3341,14 +3356,11 @@ class AlpineChunk {
                 batch.add(new THREE.BoxGeometry(wEdge + 0.35, pierH, 0.55), stoneMat, pierPos.x, roadDeckH - pierH / 2 + 0.02, pierPos.z, 0, Math.PI - hEdge, 0);
                 batch.add(new THREE.BoxGeometry(wEdge + 0.55, 0.15, 0.75), stoneMat, pierPos.x, roadDeckH - 0.05, pierPos.z, 0, Math.PI - hEdge, 0);
 
-                // Warm bridge pier lanterns
+                // Warm bridge pier lanterns (emissive glow bloom, NO dynamic point light to preserve program cache key)
                 [-1, 1].forEach(side => {
                     const lPos = move(pierPos, hEdge + Math.PI / 2, side * (wEdge / 2 + 0.28));
                     batch.add(new THREE.CylinderGeometry(0.035, 0.05, 0.75, 8), woodRail, lPos.x, roadDeckH + 0.45, lPos.z);
-                    batch.add(new THREE.IcosahedronGeometry(0.1, 1), new THREE.MeshStandardMaterial({ color: 0xffd681, emissive: 0xff8a24, emissiveIntensity: 2.4, toneMapped: false }), lPos.x, roadDeckH + 0.85, lPos.z);
-                    const pierLight = new THREE.PointLight(0xff9a3c, 0.7, 3.8, 1.8);
-                    pierLight.position.set(lPos.x, roadDeckH + 0.85, lPos.z);
-                    this.group.add(pierLight);
+                    batch.add(new THREE.IcosahedronGeometry(0.1, 1), windowGlowMat, lPos.x, roadDeckH + 0.85, lPos.z);
                 });
 
                 // B. Rushing Glacier Brook Ribbon in canyon
@@ -3357,7 +3369,7 @@ class AlpineChunk {
                 waterGeo.rotateX(-Math.PI / 2);
                 waterGeo.rotateY(streamPerp);
                 waterGeo.translate(pierPos.x, streamY, pierPos.z);
-                const waterMesh = new THREE.Mesh(waterGeo, createAlpineWaterMaterial());
+                const waterMesh = new THREE.Mesh(waterGeo, getSharedProceduralWaterMaterial());
                 waterMesh.renderOrder = 2;
                 this.group.add(waterMesh);
 
