@@ -598,6 +598,8 @@ export function signalState(node, time, approach) {
 
 export function generateAlpine(seed, theme) {
   const nodes = [
+    { id: "alp-pre-2", x: -14.5, z: -14.5, control: "none", offset: 0, neighbors: [] },
+    { id: "alp-pre-1", x: -10.8, z: -10.8, control: "none", offset: 0, neighbors: [] },
     { id: "alp-entry", x: -7.5, z: -7.5, control: "none", offset: 0, neighbors: [] },
     { id: "alp-0", x: -6.0, z: -6.0, control: "none", offset: 0, neighbors: [] },
     { id: "alp-1", x: -4.0, z: -4.0, control: "none", offset: 0, neighbors: [] },
@@ -628,6 +630,8 @@ export function generateAlpine(seed, theme) {
   };
 
   // Main Mountain Pass Ridge (4-lane Alpine Parkway throughout)
+  link("alp-pre-2", "alp-pre-1", "Alpine Pass · Valley Approach", 2.8);
+  link("alp-pre-1", "alp-entry", "Alpine Pass · Valley Approach", 2.8);
   link("alp-entry", "alp-0", "Alpine Pass · Valley Approach", 2.8);
   link("alp-0", "alp-1", "Alpine Pass · Valley Approach", 2.8);
   link("alp-1", "alp-2", "Alpine Pass · Pine Forest", 2.8);
@@ -670,7 +674,7 @@ export function generateAlpine(seed, theme) {
 
   // Pre-generate initial scenic legs extending out into surrounding alpine chunks
   let curDestNode = world.byId["alp-7"];
-  for (let l = 1; l <= 3; l++) {
+  for (let l = 1; l <= 5; l++) {
     const ext = extendAlpineWorld(world, curDestNode, Math.random, l % 2 === 0 ? "right" : "left");
     if (ext && ext.pathIds) {
       routeIds.push(...ext.pathIds.slice(1));

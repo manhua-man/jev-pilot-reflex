@@ -1473,7 +1473,7 @@ export class DriveScene {
         this.bloom?.resolution?.set(width, height);
       }
       this.camera.aspect = width / height;
-      const targetFov = this.sim.world.type === "alpine" ? 48 : 38;
+      const targetFov = 38;
       if (Math.abs(this.camera.fov - targetFov) > 0.1) {
         this.camera.fov = targetFov;
       }
@@ -1917,6 +1917,10 @@ export class DriveScene {
             -Math.cos(yaw) * Math.cos(view.pitch),
           ).multiplyScalar(25 * carScale),
         );
+    } else if (this.mode === "overview" && this.sim.world.type === "alpine") {
+      // Iconic Four-Seasons Diorama Overview Vantage (16, 12, 16 -> 0, 0.35, 0)
+      pos = new THREE.Vector3(16, 12, 16);
+      look = new THREE.Vector3(0, 0.35, 0);
     } else if (this.mode === "map" && this.sim.world.type === "alpine") {
       const py = this.player.position.y || 0.05;
       const view = this.cameraInput.current();
@@ -1932,11 +1936,11 @@ export class DriveScene {
       // True Four-Seasons Panoramic Diorama Tilt-Shift Follow Cam:
       // Uses stable oblique vantage (~67 deg) + user orbit drag,
       // perfectly balancing hero car, winding road, towering summits, and golden sunset sky
-      const orbitYaw = Math.PI / 4 + 0.38 + (view.yaw || 0);
-      const pitch = Math.max(0.32, Math.min(0.85, (view.pitch ?? 0.42)));
-      const dist = Math.max(12.0, Math.min(32.0, (view.distance || 14) * 1.25));
+      const orbitYaw = Math.PI / 4 + 0.35 + (view.yaw || 0);
+      const pitch = Math.max(0.36, Math.min(0.85, (view.pitch ?? 0.46)));
+      const dist = Math.max(12.0, Math.min(30.0, (view.distance || 15) * 1.15));
       const hDist = Math.cos(pitch) * dist;
-      const vHeight = Math.sin(pitch) * dist + 2.8;
+      const vHeight = Math.sin(pitch) * dist + 2.4;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
         v.x - Math.sin(orbitYaw) * hDist,
@@ -1948,10 +1952,10 @@ export class DriveScene {
       if (pos.y < terrH + 2.5) {
         pos.y = terrH + 2.5;
       }
-      const ahead = 3.5;
+      const ahead = 2.8;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
-        py + 1.2,
+        py + 0.95,
         v.z - Math.cos(v.heading) * ahead,
       );
     } else {

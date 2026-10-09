@@ -758,6 +758,77 @@ function createSafeCanvas(w = 256, h = 256) {
             return _sharedBushGeo;
         }
 
+        let _sharedWoodGeo = null;
+        function getSharedDeciduousWoodGeometry() {
+            if (!_sharedWoodGeo) {
+                const woodParts = [new THREE.CylinderGeometry(0.06, 0.12, 1.3, 6).translate(0, 0.65, 0)];
+                const branch = (len, rad, tiltZ, rotY, y) => {
+                    const g = new THREE.CylinderGeometry(rad * 0.5, rad, len, 5).translate(0, len / 2, 0);
+                    g.rotateZ(tiltZ); g.rotateY(rotY); g.translate(0, y, 0);
+                    return g;
+                };
+                for (let i = 0; i < 5; i++) {
+                    woodParts.push(branch(0.62, 0.05, 0.75 + (i % 2) * 0.2, i * 1.26, 0.9 + (i % 3) * 0.12));
+                    woodParts.push(branch(0.32, 0.025, 1.1, i * 1.26 + 0.6, 1.25 + (i % 2) * 0.1));
+                }
+                _sharedWoodGeo = mergeGeometries(woodParts.map(nonIndexed));
+            }
+            return _sharedWoodGeo;
+        }
+
+        let _sharedCanopyGeo = null;
+        function getSharedDeciduousCanopyGeometry() {
+            if (!_sharedCanopyGeo) {
+                const CANOPY_CENTER_Y = 1.5;
+                const blobs = [];
+                const blobData = [
+                    [0, 0.05, 0, 0.55],
+                    [0.36, -0.12, 0.1, 0.4],
+                    [-0.32, -0.08, -0.14, 0.42],
+                    [0.05, 0.3, -0.05, 0.38],
+                    [-0.1, -0.18, 0.34, 0.36],
+                    [0.12, -0.14, -0.36, 0.34]
+                ];
+                for (const [x, y, z, r] of blobData) {
+                    blobs.push(new THREE.IcosahedronGeometry(r, 1).translate(x, y + CANOPY_CENTER_Y, z));
+                }
+                _sharedCanopyGeo = mergeGeometries(blobs);
+            }
+            return _sharedCanopyGeo;
+        }
+
+        let _sharedCanopyMat = null;
+        function getSharedDeciduousCanopyMaterial() {
+            if (!_sharedCanopyMat) {
+                _sharedCanopyMat = patchMaterial(stdMat(0xffffff, 0.8), {
+                    key: 'alpine-canopy-shared',
+                    worldPos: true,
+                    worldNormal: true,
+                    vertexPars: LOCAL_WIND,
+                    vertexBegin: /* glsl */`
+                        vec3 cOrigin = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                        float leafSway = sin(uWindTime * 1.8 + cOrigin.x + position.y * 3.0) * 0.03 + gustAt(cOrigin.xz) * 0.06;
+                        transformed += toLocal(vec3(uWindDir.x, 0.0, uWindDir.y) * leafSway * smoothstep(1.0, 2.0, position.y));
+                    `,
+                    fragmentColor: /* glsl */`
+                        float speck = sn_noise(vWPos.xz * 6.5 + vWPos.y * 5.0);
+                        float treeSeed = sn_hash(floor(vWPos.xz * 0.35 + vec2(11.3, 7.7)));
+                        vec3 spring = mix(vec3(0.92, 0.36, 0.55), vec3(1.0, 0.8, 0.86), step(0.6, fract(treeSeed * 3.7)));
+                        spring = mix(spring, vec3(0.5, 0.78, 0.3), smoothstep(0.62, 0.8, speck) * 0.6);
+                        vec3 summer = mix(vec3(0.14, 0.36, 0.10), vec3(0.24, 0.48, 0.15), treeSeed) * (0.88 + speck * 0.24);
+                        vec3 autumn = mix(vec3(0.75, 0.12, 0.04), vec3(0.95, 0.45, 0.05), fract(treeSeed * 5.3));
+                        autumn = mix(autumn, vec3(0.95, 0.7, 0.1), step(0.78, fract(treeSeed * 2.9)));
+                        autumn *= 0.8 + speck * 0.4;
+                        vec3 winter = vec3(0.35, 0.28, 0.2);
+                        vec3 cc = spring * uSeasonW.x + summer * uSeasonW.y + autumn * uSeasonW.z + winter * uSeasonW.w;
+                        cc = mix(cc, vec3(0.88, 0.92, 0.98), uSnowCoverage * 0.65);
+                        diffuseColor.rgb = cc;
+                    `
+                });
+            }
+            return _sharedCanopyMat;
+        }
+
 
         /* ════════════════════════════════════════════════════════════════════
            MIST PUFFS — tiny shader-animated point clouds (spring source, cascade).
@@ -2882,18 +2953,36 @@ class AlpineChunk {
         const stoneMat = dusted(0x6e6862);
         const woodRail = patchMaterial(stdMat(0x6b4f3a, 0.9), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
         const trunkMat = patchMaterial(stdMat(0x4a2f20, 0.9), { key: 'trunk-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
-        const needleMat = patchMaterial(stdMat(0x1f4a2c, 0.85), { key: 'needle-dusted', worldNormal: true, fragmentColor: snowDustCode('0.95') });
-        const birchTrunk = patchMaterial(stdMat(0xd8d4cd, 0.85), { key: 'birch-trunk', worldNormal: true, fragmentColor: snowDustCode('0.8') });
-        const birchLeaves = patchMaterial(stdMat(0x6b8e23, 0.85), { key: 'birch-leaves', worldNormal: true, fragmentColor: snowDustCode('0.85') });
+        const needleMat = patchMaterial(stdMat(0x1f4a2c, 0.85), {
+            key: 'needle-dusted',
+            worldNormal: true,
+            fragmentColor: /* glsl */`
+                diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 0.9, 1.0), uSeasonW.w);
+                diffuseColor.rgb *= mix(vec3(1.0), vec3(1.12, 1.1, 0.9), uSeasonW.x);
+            ` + snowDustCode('0.95')
+        });
 
-        // Natural Alpine Trees (~20 trees per chunk, open meadows matching Four-Seasons)
-        const treeCount = 20;
-        for (let k = 0; k < treeCount; k++) {
-            const rx = ox + 1.0 + (hash(this.cx * 73 + k * 17, this.cz * 41 + k * 11) % 1) * (CHUNK_SIZE - 2.0);
-            const rz = oz + 1.0 + (hash(this.cz * 59 + k * 23, this.cx * 31 + k * 13) % 1) * (CHUNK_SIZE - 2.0);
-            const h = getContinuousAlpineHeight(rx, rz, this.world);
-            if (h > 4.2 || h < 0.1) continue;
+        const sharedWoodGeo = getSharedDeciduousWoodGeometry();
+        const sharedCanopyGeo = getSharedDeciduousCanopyGeometry();
+        const sharedCanopyMat = getSharedDeciduousCanopyMaterial();
 
+        // Natural Alpine Tree Groves (clustered down in the meadows & valley hollows;
+        // high ridges and peaks strictly respect the Alpine Tree Line!)
+        const groveCount = 4;
+        for (let g = 0; g < groveCount; g++) {
+            const gx = ox + 2.5 + (hash(this.cx * 73 + g * 29, this.cz * 41 + g * 19) % 1) * (CHUNK_SIZE - 5.0);
+            const gz = oz + 2.5 + (hash(this.cz * 59 + g * 31, this.cx * 31 + g * 23) % 1) * (CHUNK_SIZE - 5.0);
+            const gh = getContinuousAlpineHeight(gx, gz, this.world);
+
+            // Strictly enforce the Alpine Tree Line (gh <= 2.2) and gentle slope cutoff:
+            // High mountain peaks and sharp crests remain bare, majestic granite crags!
+            const stepSlope = 0.6;
+            const hX = getContinuousAlpineHeight(gx + stepSlope, gz, this.world);
+            const hZ = getContinuousAlpineHeight(gx, gz + stepSlope, this.world);
+            const slope = Math.hypot(hX - gh, hZ - gh) / stepSlope;
+            if (gh > 2.2 || slope > 0.58 || gh < 0.1) continue;
+
+            // Check distance to road edges for grove center
             let nearRoad = false;
             if (this.world && this.world.edges && this.world.byId) {
                 for (const e of this.world.edges) {
@@ -2902,9 +2991,9 @@ class AlpineChunk {
                     const dx = b.x - a.x, dz = b.z - a.z;
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
-                    const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
+                    const t = clamp(((gx - a.x) * dx + (gz - a.z) * dz) / l2, 0, 1);
                     const treeMargin = (e.width || 2.8) / 2 + 1.85;
-                    if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < treeMargin) {
+                    if (Math.hypot(gx - (a.x + t * dx), gz - (a.z + t * dz)) < treeMargin) {
                         nearRoad = true;
                         break;
                     }
@@ -2912,22 +3001,55 @@ class AlpineChunk {
             }
             if (nearRoad) continue;
 
-            const scale = 0.85 + (hash(k * 31, this.cx + this.cz) % 1) * 0.45;
-            if (k % 4 === 0) {
-                // Multi-branch Birch Tree
-                batch.add(new THREE.CylinderGeometry(0.06 * scale, 0.1 * scale, 1.3 * scale, 5), birchTrunk, rx, h + 0.65 * scale, rz);
-                batch.add(new THREE.DodecahedronGeometry(0.55 * scale), birchLeaves, rx, h + 1.5 * scale, rz);
-                batch.add(new THREE.DodecahedronGeometry(0.38 * scale), birchLeaves, rx + 0.25 * scale, h + 1.25 * scale, rz + 0.2 * scale);
-                batch.add(new THREE.DodecahedronGeometry(0.35 * scale), birchLeaves, rx - 0.22 * scale, h + 1.35 * scale, rz - 0.18 * scale);
-            } else {
-                // 4-tier Alpine Conifer with winter snow caps
-                batch.add(new THREE.CylinderGeometry(0.08 * scale, 0.14 * scale, 0.85 * scale, 5), trunkMat, rx, h + 0.42 * scale, rz);
-                for (let c = 0; c < 4; c++) {
-                    const r = (0.72 - c * 0.15) * scale;
-                    const hgt = (0.95 - c * 0.1) * scale;
-                    const ty = h + (0.95 + c * 0.52) * scale;
-                    batch.add(new THREE.ConeGeometry(r, hgt, 6), needleMat, rx, ty, rz);
-                    batch.add(new THREE.ConeGeometry(r * 0.62, hgt * 0.55, 6), snowSlabMaterial, rx, ty + hgt * 0.22, rz);
+            const isDeciduousGrove = (hash(this.cx * 17 + g * 13, this.cz * 19 + g * 7) % 1) < 0.38;
+            const treesInGrove = isDeciduousGrove ? 2 + Math.floor((hash(g * 7, this.cx) % 1) * 2) : 3 + Math.floor((hash(g * 11, this.cz) % 1) * 3);
+
+            for (let t = 0; t < treesInGrove; t++) {
+                const angle = (t / treesInGrove) * Math.PI * 2 + (hash(t * 13, g * 17) % 1) * 0.8;
+                const r = 0.5 + (hash(t * 31, g * 43) % 1) * 1.5;
+                const rx = gx + Math.cos(angle) * r;
+                const rz = gz + Math.sin(angle) * r;
+                const th = getContinuousAlpineHeight(rx, rz, this.world);
+                if (th > 2.35 || th < 0.1) continue;
+
+                // Also check road margin for individual tree
+                let indNearRoad = false;
+                if (this.world && this.world.edges && this.world.byId) {
+                    for (const e of this.world.edges) {
+                        const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                        if (!a || !b) continue;
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const l2 = dx * dx + dz * dz;
+                        if (!l2) continue;
+                        const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
+                        const treeMargin = (e.width || 2.8) / 2 + 1.5;
+                        if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < treeMargin) {
+                            indNearRoad = true;
+                            break;
+                        }
+                    }
+                }
+                if (indNearRoad) continue;
+
+                const scale = 0.75 + (hash(t * 17 + g * 3, this.cx + this.cz) % 1) * 0.38;
+                if (isDeciduousGrove) {
+                    // Sculpted 6-blob Birch / Deciduous tree with dynamic seasonal foliage
+                    const mTree = new THREE.Matrix4()
+                        .makeTranslation(rx, th, rz)
+                        .multiply(new THREE.Matrix4().makeRotationY((hash(t * 23, g) % 1) * Math.PI * 2))
+                        .multiply(new THREE.Matrix4().makeScale(scale, scale, scale));
+                    batch.addMatrix(sharedWoodGeo, woodRail, mTree);
+                    batch.addMatrix(sharedCanopyGeo, sharedCanopyMat, mTree);
+                } else {
+                    // 4-tier Alpine Conifer with winter snow caps
+                    batch.add(new THREE.CylinderGeometry(0.08 * scale, 0.14 * scale, 0.85 * scale, 5), trunkMat, rx, th + 0.42 * scale, rz);
+                    for (let c = 0; c < 4; c++) {
+                        const rNeedle = (0.72 - c * 0.15) * scale;
+                        const hgt = (0.95 - c * 0.1) * scale;
+                        const ty = th + (0.95 + c * 0.52) * scale;
+                        batch.add(new THREE.ConeGeometry(rNeedle, hgt, 6), needleMat, rx, ty, rz);
+                        batch.add(new THREE.ConeGeometry(rNeedle * 0.62, hgt * 0.55, 6), snowSlabMaterial, rx, ty + hgt * 0.22, rz);
+                    }
                 }
             }
         }
@@ -3220,7 +3342,7 @@ class AlpineChunk {
                                 .makeTranslation(fbx, fby, fbz)
                                 .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2))
                                 .multiply(new THREE.Matrix4().makeScale(bScale, bScale, bScale));
-                            batch.addMatrix(bankBushGeo, birchLeaves, mBush);
+                            batch.addMatrix(bankBushGeo, sharedCanopyMat, mBush);
                         }
                     }
                 }

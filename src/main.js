@@ -407,14 +407,16 @@ async function finishLoading() {
   setPilot(true);
 }
 function changeCamera() {
-  const modes = ["chase", "hood", "map"];
-  scene.mode = modes[(modes.indexOf(scene.mode) + 1) % 3];
+  const modes = sim.world.type === "alpine" ? ["chase", "overview", "hood", "map"] : ["chase", "hood", "map"];
+  const curIdx = modes.indexOf(scene.mode);
+  scene.mode = modes[(curIdx + 1) % modes.length];
   scene.snap = true;
   $("camera-name").textContent = {
     chase: "Chase",
+    overview: "Diorama",
     hood: "Driver",
     map: "Bird’s eye",
-  }[scene.mode];
+  }[scene.mode] || "Chase";
   tooltips.set(
     $("camera"),
     `Change camera · ${$("camera-name").textContent} · C`,
