@@ -40,7 +40,7 @@ import {
   buildCityRoadNetwork,
   buildHighwayRoadNetwork,
 } from "./road-renderer.js";
-import { AlpinePassage, getContinuousAlpineHeight } from "./alpine-world.js";
+import { AlpinePassage, getContinuousAlpineHeight, CAR_SHARED } from "./alpine-world.js";
 let daylight;
 function daylightEnvironment() {
   return (daylight ||= new HDRLoader(assetManager)
@@ -1429,11 +1429,20 @@ export class DriveScene {
   }
   createVehicleMesh(v) {
     if (this.sim.world.type === "alpine") {
-      if (v.subtype === "suv") return detailedAlpineSUV(v.color);
-      if (v.subtype === "truck") return detailedAlpineLoggingTruck(v.color);
-      if (v.subtype === "bus") return detailedAlpineBus(v.color);
-      if (v.subtype === "motorcycle") return detailedCar(v.color, true);
-      return detailedCar(v.color, false);
+      let m;
+      if (v.subtype === "suv") m = detailedAlpineSUV(v.color);
+      else if (v.subtype === "truck") m = detailedAlpineLoggingTruck(v.color);
+      else if (v.subtype === "bus") m = detailedAlpineBus(v.color);
+      else if (v.subtype === "motorcycle") m = detailedCar(v.color, true);
+      else m = detailedCar(v.color, false);
+
+      if (CAR_SHARED?.poolGeo && CAR_SHARED?.poolMat) {
+        const pool = new THREE.Mesh(CAR_SHARED.poolGeo, CAR_SHARED.poolMat);
+        pool.renderOrder = 4;
+        m.add(pool);
+        m.userData.lightPool = pool;
+      }
+      return m;
     }
     return carModel(v.color, v.type === "motorcycle");
   }
@@ -1554,6 +1563,12 @@ export class DriveScene {
         }
         m.position.set(p.x, py, p.z);
         m.rotation.y = -p.heading;
+        if (m.userData.lightPool) {
+          const T = this.seasonController?.time;
+          const nightVal = T ? Math.max(T.night || 0, (T.evening || 0) * 0.7) : 0;
+          m.userData.lightPool.visible = nightVal > 0.05 || this.weatherMode === "rain" || this.weatherMode === "night";
+          m.userData.lightPool.material.opacity = Math.max(0.12, nightVal * 0.45);
+        }
       }
     }
 

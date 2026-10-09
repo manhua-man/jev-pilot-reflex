@@ -770,6 +770,128 @@ function createSafeCanvas(w = 256, h = 256) {
            rock foam wakes, cascade whitewater and gradual winter freeze.
            Reads: uFlowTime, uFreeze, uFoam, uSnowCoverage, uNight, uSunDir, uSky*.
            ════════════════════════════════════════════════════════════════════ */
+        function createAlpineWaterMaterial(rockUniform = null) {
+            const rocks = rockUniform || Array.from({ length: 8 }, () => new THREE.Vector4(-10, -10, 1, 1));
+            return new THREE.ShaderMaterial({
+                uniforms: {
+                    ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+                    ...U,
+                    uRocks: { value: rocks }
+                },
+                fog: true,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                vertexShader: SHARED_DECL + /* glsl */`
+                    #include <fog_pars_vertex>
+                    varying vec2 vUv; varying vec3 vWorldPosition; varying float vSlope; varying float vWave;
+                    void main() {
+                        vUv = uv;
+                        vec3 p = position;
+                        float calm = 1.0 - uFreeze;
+                        float primary = sin(uv.y * 10.0 - uFlowTime * 3.5 + uv.x * 5.0);
+                        float secondary = sin(uv.y * 23.0 - uFlowTime * 5.2 - uv.x * 8.0);
+                        vWave = (primary * 0.58 + secondary * 0.24) * calm;
+                        p.y += vWave * 0.008;
+                        vec4 world = modelMatrix * vec4(p, 1.0);
+                        vWorldPosition = world.xyz;
+                        vSlope = clamp(1.0 - abs(normalize(mat3(modelMatrix) * normal).y), 0.0, 1.0);
+                        vec4 mvPosition = viewMatrix * world;
+                        gl_Position = projectionMatrix * mvPosition;
+                        #include <fog_vertex>
+                    }
+                `,
+                fragmentShader: SHARED_DECL + GLSL_NOISE + /* glsl */`
+                    #include <fog_pars_fragment>
+                    uniform vec3 uSkyTop; uniform vec3 uSkyBottom;
+                    uniform vec4 uRocks[8];
+                    varying vec2 vUv; varying vec3 vWorldPosition; varying float vSlope; varying float vWave;
+
+                    float voronoiEdge(vec2 p) {
+                        vec2 i = floor(p), f = fract(p);
+                        float d1 = 8.0, d2 = 8.0;
+                        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+                            vec2 g = vec2(float(x), float(y));
+                            vec2 o = vec2(sn_hash(i + g), sn_hash(i + g + 17.31));
+                            vec2 r = g + o - f;
+                            float d = dot(r, r);
+                            if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
+                        }
+                        return sqrt(d2) - sqrt(d1);
+                    }
+
+                    void main() {
+                        float flowTime = uFlowTime * 1.25;
+                        vec2 flowUv = vec2(vUv.x * 4.2, vUv.y * 1.35 - flowTime);
+                        float largeFlow = sn_fbm(flowUv + vec2(sin(vUv.y * 0.7), 0.0));
+                        float fineFlow = sn_fbm(flowUv * 2.65 + vec2(4.7, -flowTime * 0.8));
+                        float current = smoothstep(0.34, 0.84, largeFlow * 0.72 + fineFlow * 0.36 + vWave * 0.08);
+                        float bankDistance = min(vUv.x, 1.0 - vUv.x);
+                        float depth = smoothstep(0.0, 0.42, bankDistance);
+
+                        // Foam: banks, rapids, the cascade and wakes behind stones.
+                        float bankFoam = (1.0 - smoothstep(0.025, 0.23, bankDistance))
+                            * smoothstep(0.44, 0.76, sn_fbm(vec2(vUv.y * 2.9 - flowTime * 1.7, vUv.x * 7.0)));
+                        float rapidBands = sin(vUv.y * 29.0 - flowTime * 5.8 + fineFlow * 7.0) * 0.5 + 0.5;
+                        float rapidFoam = smoothstep(0.78, 0.98, rapidBands) * (0.12 + vSlope * 2.2);
+                        float cascade = smoothstep(0.06, 0.26, vSlope) * (0.55 + 0.45 * fineFlow);
+                        float wake = 0.0;
+                        for (int i = 0; i < 8; i++) {
+                            vec4 r = uRocks[i];
+                            vec2 d = vec2((vUv.x - r.x) / r.z, (vUv.y - r.y) / r.w);
+                            float rd = length(d) - 1.05;
+                            float ring = exp(-rd * rd * 7.0);
+                            float trail = step(0.0, d.y) * exp(-d.x * d.x * 1.3) * exp(-d.y * 0.28);
+                            float churn = smoothstep(0.3, 0.7, sn_noise(vec2(d.x * 2.2, d.y * 0.9 - flowTime * 5.0)));
+                            wake += (ring * 0.9 + trail * 0.75) * churn;
+                        }
+                        float foam = clamp((bankFoam * 0.92 + rapidFoam + wake) * clamp(uFoam, 0.2, 1.6) + cascade, 0.0, 1.0);
+
+                        vec3 deepColor = mix(vec3(0.018, 0.17, 0.23), vec3(0.008, 0.035, 0.095), uNight);
+                        vec3 shallowColor = mix(vec3(0.09, 0.58, 0.68), vec3(0.025, 0.25, 0.48), uNight);
+                        vec3 bankTint = mix(vec3(0.22, 0.3, 0.2), vec3(0.03, 0.05, 0.07), uNight);
+                        vec3 color = mix(deepColor, shallowColor, current * 0.6 + (1.0 - depth) * 0.3);
+                        color = mix(bankTint, color, 0.35 + 0.65 * smoothstep(0.0, 0.2, bankDistance));
+
+                        // Caustic-like light ribbons over the shallows
+                        float caust = pow(1.0 - abs(sn_noise(flowUv * 3.1 + vec2(fineFlow * 1.6, 0.0)) * 2.0 - 1.0), 6.0);
+                        color += vec3(0.45, 0.85, 0.9) * caust * 0.24 * (1.0 - uNight * 0.75) * (0.4 + depth);
+
+                        // Fresnel sky reflection + sun glint
+                        vec3 N = normalize(vec3((fineFlow - 0.5) * 0.32 * (1.0 - uFreeze), 1.0, (largeFlow - 0.5) * 0.28 * (1.0 - uFreeze)));
+                        vec3 V = normalize(cameraPosition - vWorldPosition);
+                        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+                        vec3 R = reflect(-V, N);
+                        vec3 skyRef = mix(uSkyBottom, uSkyTop, clamp(R.y * 1.3, 0.0, 1.0));
+                        color = mix(color, skyRef, clamp(fresnel * 0.85 + 0.1, 0.0, 0.7));
+                        float glint = pow(max(dot(R, normalize(uSunDir)), 0.0), 90.0);
+                        color += uSunColor * glint * 2.0;
+                        color = mix(color, mix(vec3(0.82, 0.94, 0.98), vec3(0.3, 0.42, 0.6), uNight), foam * 0.85);
+
+                        // Winter: ice grows in from the banks, cracks, snow on the edges.
+                        float fn = sn_noise(vWorldPosition.xz * 4.0);
+                        float iceMask = smoothstep(-0.05, 0.05, uFreeze * 1.18 - bankDistance * 2.0 + (fn - 0.5) * 0.2);
+                        float crack = 1.0 - smoothstep(0.0, 0.05, voronoiEdge(vWorldPosition.xz * 5.0));
+                        float crackFine = 1.0 - smoothstep(0.0, 0.035, voronoiEdge(vWorldPosition.xz * 13.0 + 3.1));
+                        vec3 ice = mix(vec3(0.28, 0.52, 0.7), vec3(0.6, 0.8, 0.92), sn_fbm(vWorldPosition.xz * 2.2));
+                        ice = mix(ice, vec3(0.95, 0.98, 1.0), crack * 0.55 + crackFine * 0.22);
+                        ice = mix(ice, skyRef, fresnel * 0.35) + uSunColor * glint * 1.2;
+                        float edgeSnow = 1.0 - smoothstep(0.02, 0.07 + 0.08 * fn, bankDistance);
+                        float drift = smoothstep(0.64, 0.78, sn_fbm(vWorldPosition.xz * 2.8)) * uSnowCoverage;
+                        ice = mix(ice, vec3(0.9, 0.94, 0.98), max(edgeSnow * uFreeze, drift * 0.7));
+                        ice *= mix(1.0, 0.28, uNight) * mix(vec3(1.0), vec3(0.7, 0.8, 1.1), uNight);
+                        color = mix(color, ice, iceMask);
+
+                        float alpha = mix(mix(0.72, 0.93, current), 0.97, max(iceMask, foam * 0.6));
+                        gl_FragColor = vec4(color, alpha);
+                        #include <tonemapping_fragment>
+                        #include <colorspace_fragment>
+                        #include <fog_fragment>
+                    }
+                `
+            });
+        }
+
         class Stream {
             constructor(scene, rockGeometry, rockMaterial) {
                 this.scene = scene;
@@ -820,124 +942,7 @@ function createSafeCanvas(w = 256, h = 256) {
                 geo.computeVertexNormals();
 
                 this.rockUniform = Array.from({ length: 8 }, () => new THREE.Vector4(-10, -10, 1, 1));
-                this.material = new THREE.ShaderMaterial({
-                    uniforms: {
-                        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-                        ...U,
-                        uRocks: { value: this.rockUniform }
-                    },
-                    fog: true,
-                    transparent: true,
-                    depthWrite: false,
-                    side: THREE.DoubleSide,
-                    vertexShader: SHARED_DECL + /* glsl */`
-                        #include <fog_pars_vertex>
-                        varying vec2 vUv; varying vec3 vWorldPosition; varying float vSlope; varying float vWave;
-                        void main() {
-                            vUv = uv;
-                            vec3 p = position;
-                            float calm = 1.0 - uFreeze;
-                            float primary = sin(uv.y * 10.0 - uFlowTime * 3.5 + uv.x * 5.0);
-                            float secondary = sin(uv.y * 23.0 - uFlowTime * 5.2 - uv.x * 8.0);
-                            vWave = (primary * 0.58 + secondary * 0.24) * calm;
-                            p.y += vWave * 0.008;
-                            vec4 world = modelMatrix * vec4(p, 1.0);
-                            vWorldPosition = world.xyz;
-                            vSlope = clamp(1.0 - abs(normalize(mat3(modelMatrix) * normal).y), 0.0, 1.0);
-                            vec4 mvPosition = viewMatrix * world;
-                            gl_Position = projectionMatrix * mvPosition;
-                            #include <fog_vertex>
-                        }
-                    `,
-                    fragmentShader: SHARED_DECL + GLSL_NOISE + /* glsl */`
-                        #include <fog_pars_fragment>
-                        uniform vec3 uSkyTop; uniform vec3 uSkyBottom;
-                        uniform vec4 uRocks[8];
-                        varying vec2 vUv; varying vec3 vWorldPosition; varying float vSlope; varying float vWave;
-
-                        float voronoiEdge(vec2 p) {
-                            vec2 i = floor(p), f = fract(p);
-                            float d1 = 8.0, d2 = 8.0;
-                            for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-                                vec2 g = vec2(float(x), float(y));
-                                vec2 o = vec2(sn_hash(i + g), sn_hash(i + g + 17.31));
-                                vec2 r = g + o - f;
-                                float d = dot(r, r);
-                                if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) { d2 = d; }
-                            }
-                            return sqrt(d2) - sqrt(d1);
-                        }
-
-                        void main() {
-                            float flowTime = uFlowTime * 1.25;
-                            vec2 flowUv = vec2(vUv.x * 4.2, vUv.y * 1.35 - flowTime);
-                            float largeFlow = sn_fbm(flowUv + vec2(sin(vUv.y * 0.7), 0.0));
-                            float fineFlow = sn_fbm(flowUv * 2.65 + vec2(4.7, -flowTime * 0.8));
-                            float current = smoothstep(0.34, 0.84, largeFlow * 0.72 + fineFlow * 0.36 + vWave * 0.08);
-                            float bankDistance = min(vUv.x, 1.0 - vUv.x);
-                            float depth = smoothstep(0.0, 0.42, bankDistance);
-
-                            // Foam: banks, rapids, the cascade and wakes behind stones.
-                            float bankFoam = (1.0 - smoothstep(0.025, 0.23, bankDistance))
-                                * smoothstep(0.44, 0.76, sn_fbm(vec2(vUv.y * 2.9 - flowTime * 1.7, vUv.x * 7.0)));
-                            float rapidBands = sin(vUv.y * 29.0 - flowTime * 5.8 + fineFlow * 7.0) * 0.5 + 0.5;
-                            float rapidFoam = smoothstep(0.78, 0.98, rapidBands) * (0.12 + vSlope * 2.2);
-                            float cascade = smoothstep(0.06, 0.26, vSlope) * (0.55 + 0.45 * fineFlow);
-                            float wake = 0.0;
-                            for (int i = 0; i < 8; i++) {
-                                vec4 r = uRocks[i];
-                                vec2 d = vec2((vUv.x - r.x) / r.z, (vUv.y - r.y) / r.w);
-                                float rd = length(d) - 1.05;
-                                float ring = exp(-rd * rd * 7.0);
-                                float trail = step(0.0, d.y) * exp(-d.x * d.x * 1.3) * exp(-d.y * 0.28);
-                                float churn = smoothstep(0.3, 0.7, sn_noise(vec2(d.x * 2.2, d.y * 0.9 - flowTime * 5.0)));
-                                wake += (ring * 0.9 + trail * 0.75) * churn;
-                            }
-                            float foam = clamp((bankFoam * 0.92 + rapidFoam + wake) * clamp(uFoam, 0.2, 1.6) + cascade, 0.0, 1.0);
-
-                            vec3 deepColor = mix(vec3(0.018, 0.17, 0.23), vec3(0.008, 0.035, 0.095), uNight);
-                            vec3 shallowColor = mix(vec3(0.09, 0.58, 0.68), vec3(0.025, 0.25, 0.48), uNight);
-                            vec3 bankTint = mix(vec3(0.22, 0.3, 0.2), vec3(0.03, 0.05, 0.07), uNight);
-                            vec3 color = mix(deepColor, shallowColor, current * 0.6 + (1.0 - depth) * 0.3);
-                            color = mix(bankTint, color, 0.35 + 0.65 * smoothstep(0.0, 0.2, bankDistance));
-
-                            // Caustic-like light ribbons over the shallows
-                            float caust = pow(1.0 - abs(sn_noise(flowUv * 3.1 + vec2(fineFlow * 1.6, 0.0)) * 2.0 - 1.0), 6.0);
-                            color += vec3(0.45, 0.85, 0.9) * caust * 0.24 * (1.0 - uNight * 0.75) * (0.4 + depth);
-
-                            // Fresnel sky reflection + sun glint
-                            vec3 N = normalize(vec3((fineFlow - 0.5) * 0.32 * (1.0 - uFreeze), 1.0, (largeFlow - 0.5) * 0.28 * (1.0 - uFreeze)));
-                            vec3 V = normalize(cameraPosition - vWorldPosition);
-                            float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-                            vec3 R = reflect(-V, N);
-                            vec3 skyRef = mix(uSkyBottom, uSkyTop, clamp(R.y * 1.3, 0.0, 1.0));
-                            color = mix(color, skyRef, clamp(fresnel * 0.85 + 0.1, 0.0, 0.7));
-                            float glint = pow(max(dot(R, normalize(uSunDir)), 0.0), 90.0);
-                            color += uSunColor * glint * 2.0;
-                            color = mix(color, mix(vec3(0.82, 0.94, 0.98), vec3(0.3, 0.42, 0.6), uNight), foam * 0.85);
-
-                            // Winter: ice grows in from the banks, cracks, snow on the edges.
-                            float fn = sn_noise(vWorldPosition.xz * 4.0);
-                            float iceMask = smoothstep(-0.05, 0.05, uFreeze * 1.18 - bankDistance * 2.0 + (fn - 0.5) * 0.2);
-                            float crack = 1.0 - smoothstep(0.0, 0.05, voronoiEdge(vWorldPosition.xz * 5.0));
-                            float crackFine = 1.0 - smoothstep(0.0, 0.035, voronoiEdge(vWorldPosition.xz * 13.0 + 3.1));
-                            vec3 ice = mix(vec3(0.28, 0.52, 0.7), vec3(0.6, 0.8, 0.92), sn_fbm(vWorldPosition.xz * 2.2));
-                            ice = mix(ice, vec3(0.95, 0.98, 1.0), crack * 0.55 + crackFine * 0.22);
-                            ice = mix(ice, skyRef, fresnel * 0.35) + uSunColor * glint * 1.2;
-                            float edgeSnow = 1.0 - smoothstep(0.02, 0.07 + 0.08 * fn, bankDistance);
-                            float drift = smoothstep(0.64, 0.78, sn_fbm(vWorldPosition.xz * 2.8)) * uSnowCoverage;
-                            ice = mix(ice, vec3(0.9, 0.94, 0.98), max(edgeSnow * uFreeze, drift * 0.7));
-                            ice *= mix(1.0, 0.28, uNight) * mix(vec3(1.0), vec3(0.7, 0.8, 1.1), uNight);
-                            color = mix(color, ice, iceMask);
-
-                            float alpha = mix(mix(0.72, 0.93, current), 0.97, max(iceMask, foam * 0.6));
-                            gl_FragColor = vec4(color, alpha);
-                            #include <tonemapping_fragment>
-                            #include <colorspace_fragment>
-                            #include <fog_fragment>
-                        }
-                    `
-                });
+                this.material = createAlpineWaterMaterial(this.rockUniform);
                 this.mesh = new THREE.Mesh(geo, this.material);
                 this.mesh.renderOrder = 2;
                 this.scene.add(this.mesh);
@@ -1869,12 +1874,14 @@ function createSafeCanvas(w = 256, h = 256) {
            Reads: season.fire × time.evening (flames, embers, light).
            ════════════════════════════════════════════════════════════════════ */
         class Campfire {
-            constructor(scene, glowMaterials) {
+            constructor(scene, glowMaterials, customPos = null) {
                 const camp = new THREE.Group();
-                camp.position.set(CAMP_X, getTerrainHeight(CAMP_X, CAMP_Z), CAMP_Z);
+                const pos = customPos || new THREE.Vector3(CAMP_X, getTerrainHeight(CAMP_X, CAMP_Z), CAMP_Z);
+                camp.position.copy(pos);
                 const stone = patchMaterial(stdMat(0x615b56, 0.96), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
                 const wood = patchMaterial(stdMat(0x3b2519, 0.9), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
                 this.emberMat = new THREE.MeshStandardMaterial({ color: 0x33140b, emissive: 0xff3b0a, emissiveIntensity: 3.4, toneMapped: false });
+                if (glowMaterials) glowMaterials.push({ material: this.emberMat, key: 'campfire' });
                 const b = new StaticBatch();
                 for (let i = 0; i < 10; i++) {
                     const a = i / 10 * Math.PI * 2;
@@ -2003,7 +2010,13 @@ function createSafeCanvas(w = 256, h = 256) {
                 }
             }
 
-            update(dt, t, activeCount) {
+            update(dt, t, activeCount, playerPos = null) {
+                if (playerPos) {
+                    this.home.x += (playerPos.x - this.home.x) * 0.02;
+                    this.home.z += (playerPos.z - this.home.z) * 0.02;
+                    const peakH = Math.max(5.5, getContinuousAlpineHeight(this.home.x, this.home.z, null) + 4.2);
+                    this.home.y += (peakH - this.home.y) * 0.02;
+                }
                 const active = Math.round(activeCount);
                 const { birds, home, _acc: acc, _sep: sep, _ali: ali, _coh: coh } = this;
                 for (let i = 0; i < birds.length; i++) {
@@ -2594,6 +2607,33 @@ function getSharedGrassMaterial() {
     return _sharedGrassMat;
 }
 
+function createAlpineSignboard(scene, title, subtitle, posX, posY, posZ, rotY, snowSlabMat) {
+    const canvas = createSafeCanvas();
+    canvas.width = 512; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#173e4c'; ctx.fillRect(0, 0, 512, 256);
+    ctx.strokeStyle = '#dff7f9'; ctx.lineWidth = 13; ctx.strokeRect(13, 13, 486, 230);
+    ctx.fillStyle = '#f4fbf8'; ctx.textAlign = 'center';
+    ctx.font = '700 66px Arial'; ctx.fillText(title, 256, 105);
+    ctx.font = '600 44px Arial'; ctx.fillText(subtitle, 256, 182);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Group();
+    sign.position.set(posX, posY, posZ);
+    sign.rotation.y = rotY;
+    const b = new StaticBatch();
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x48565a, metalness: 0.55, roughness: 0.5 });
+    [-0.34, 0.34].forEach(x => b.box(postMat, 0.055, 1.35, 0.055, x, 0.68, 0));
+    b.add(new THREE.PlaneGeometry(1.35, 0.67), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.68, side: THREE.DoubleSide }), 0, 1.25, 0.035);
+    b.box(postMat, 1.37, 0.69, 0.02, 0, 1.25, 0.018);
+    b.build(sign);
+    const signSnow = new THREE.Mesh(snowSlab(1.37, 0.05, 0.06), snowSlabMat);
+    signSnow.position.set(0, 1.585, 0.035);
+    sign.add(signSnow);
+    scene.add(sign);
+    return sign;
+}
+
 class AlpineChunk {
     constructor(cx, cz, parentGroup, glowMaterials = [], world = null) {
         this.cx = cx;
@@ -2903,6 +2943,11 @@ class AlpineChunk {
                     batch.add(new THREE.BoxGeometry(0.22 * chScale, 0.9 * chScale, 0.22 * chScale), stoneMat, sp.rx + 0.35 * chScale, chY + 1.65 * chScale, sp.rz + 0.25 * chScale);
                     const windowGlowMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a18, emissiveIntensity: 2.2, roughness: 0.3 });
                     batch.add(new THREE.BoxGeometry(0.28 * chScale, 0.28 * chScale, 0.05 * chScale), windowGlowMat, sp.rx, chY + 0.85 * chScale, sp.rz + 0.63 * chScale);
+
+                    // Animated Chimney Smoke Curling in Alpine Wind
+                    const chimneyPos = new THREE.Vector3(sp.rx + 0.35 * chScale, chY + 2.12 * chScale, sp.rz + 0.25 * chScale);
+                    const smoke = new ChimneySmoke(this.group, chimneyPos, 14);
+                    this.updatables.push(smoke);
                 }
             }
         }
@@ -2939,13 +2984,44 @@ class AlpineChunk {
             batch.add(new THREE.DodecahedronGeometry(0.045), fMat, fx, fy + 0.05, fz);
         }
 
-        // Road guardrails (clean timber posts and non-protruding horizontal rails)
+        // Roadside Hikers' Campfire in scenic clearings
+        if ((Math.abs(this.cx) + Math.abs(this.cz)) % 2 === 1) {
+            const campCandidates = [
+                { cx: ox + 4.2, cz: oz + 11.2 },
+                { cx: ox + 11.2, cz: oz + 4.2 }
+            ];
+            for (const c of campCandidates) {
+                const cy = getContinuousAlpineHeight(c.cx, c.cz, this.world);
+                let roadDist = 999;
+                if (this.world && this.world.edges && this.world.byId) {
+                    for (const e of this.world.edges) {
+                        const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                        if (!a || !b) continue;
+                        const dx = b.x - a.x, dz = b.z - a.z;
+                        const l2 = dx * dx + dz * dz;
+                        if (!l2) continue;
+                        const t = clamp(((c.cx - a.x) * dx + (c.cz - a.z) * dz) / l2, 0, 1);
+                        const d = Math.hypot(c.cx - (a.x + t * dx), c.cz - (a.z + t * dz));
+                        if (d < roadDist) roadDist = d;
+                    }
+                }
+                if (roadDist >= 4.2 && roadDist <= 7.2 && cy >= 0.25 && cy <= 3.2) {
+                    const campfire = new Campfire(this.group, this.glowMaterials, new THREE.Vector3(c.cx, cy, c.cz));
+                    this.updatables.push(campfire);
+                    break;
+                }
+            }
+        }
+
+        // Road guardrails (clean timber posts with amber reflectors & winter snow caps)
+        const reflectorMat = new THREE.MeshStandardMaterial({ color: 0xffe5a1, emissive: 0xffa800, emissiveIntensity: 0.9, toneMapped: false });
+        if (this.glowMaterials) this.glowMaterials.push({ material: reflectorMat, key: 'reflector' });
         if (this.world && this.world.edges && this.world.byId) {
             for (const e of this.world.edges) {
                 const a = this.world.byId[e.a], b = this.world.byId[e.b];
                 if (!a || !b) continue;
                 const len = dist(a, b);
-                if (len < 3.0) continue; // Only place along straightaways or viaduct spans, skip tight hairpin chords
+                if (len < 3.0) continue;
 
                 const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
                 if (midX < ox - 3 || midX > ox + CHUNK_SIZE + 3 || midZ < oz - 3 || midZ > oz + CHUNK_SIZE + 3) continue;
@@ -2968,8 +3044,69 @@ class AlpineChunk {
                         const py = getContinuousAlpineHeight(gp.x, gp.z, this.world);
                         batch.add(new THREE.CylinderGeometry(0.035, 0.035, 0.32, 5), woodRail, gp.x, py + 0.16, gp.z);
                         batch.add(new THREE.BoxGeometry(0.05, 0.08, 1.35), woodRail, gp.x, py + 0.22, gp.z, 0, Math.PI - hEdge, 0);
+                        // Micro-reflector and snow cap
+                        batch.add(new THREE.BoxGeometry(0.04, 0.04, 0.02), reflectorMat, gp.x, py + 0.24, gp.z, 0, Math.PI - hEdge, 0);
+                        batch.add(new THREE.BoxGeometry(0.058, 0.025, 1.34), snowSlabMaterial, gp.x, py + 0.27, gp.z, 0, Math.PI - hEdge, 0);
                     }
                 }
+            }
+        }
+
+        // Glacier Torrent Viaduct Bridge Architecture & Rushing Canyon Brook
+        if (this.world && this.world.edges && this.world.byId) {
+            for (const e of this.world.edges) {
+                if (!e.id?.includes("vd") && !e.name?.includes("Viaduct")) continue;
+                const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                if (!a || !b) continue;
+                const midX = (a.x + b.x) / 2, midZ = (a.z + b.z) / 2;
+                if (midX < ox || midX >= ox + CHUNK_SIZE || midZ < oz || midZ >= oz + CHUNK_SIZE) continue;
+
+                const len = dist(a, b);
+                const hEdge = heading(a, b);
+                const wEdge = e.width || 2.8;
+                const roadDeckH = getAlpineRoadElevation(midX, midZ);
+                const streamY = roadDeckH - 1.25;
+
+                // A. Massive Stone Arched Viaduct Piers supporting the road deck
+                const pierStep = len * 0.5;
+                const pierPos = move(a, hEdge, pierStep);
+                const pierH = 1.35;
+                batch.add(new THREE.BoxGeometry(wEdge + 0.35, pierH, 0.55), stoneMat, pierPos.x, roadDeckH - pierH / 2 + 0.02, pierPos.z, 0, Math.PI - hEdge, 0);
+                batch.add(new THREE.BoxGeometry(wEdge + 0.55, 0.15, 0.75), stoneMat, pierPos.x, roadDeckH - 0.05, pierPos.z, 0, Math.PI - hEdge, 0);
+
+                // Warm bridge pier lanterns
+                [-1, 1].forEach(side => {
+                    const lPos = move(pierPos, hEdge + Math.PI / 2, side * (wEdge / 2 + 0.28));
+                    batch.add(new THREE.CylinderGeometry(0.035, 0.05, 0.75, 8), woodRail, lPos.x, roadDeckH + 0.45, lPos.z);
+                    batch.add(new THREE.IcosahedronGeometry(0.1, 1), new THREE.MeshStandardMaterial({ color: 0xffd681, emissive: 0xff8a24, emissiveIntensity: 2.4, toneMapped: false }), lPos.x, roadDeckH + 0.85, lPos.z);
+                    const pierLight = new THREE.PointLight(0xff9a3c, 0.7, 3.8, 1.8);
+                    pierLight.position.set(lPos.x, roadDeckH + 0.85, lPos.z);
+                    this.group.add(pierLight);
+                });
+
+                // B. Rushing Glacier Brook Ribbon in canyon
+                const streamPerp = hEdge + Math.PI / 2;
+                const waterGeo = new THREE.PlaneGeometry(2.6, 14, 18, 18);
+                waterGeo.rotateX(-Math.PI / 2);
+                waterGeo.rotateY(streamPerp);
+                waterGeo.translate(pierPos.x, streamY, pierPos.z);
+                const waterMesh = new THREE.Mesh(waterGeo, createAlpineWaterMaterial());
+                waterMesh.renderOrder = 2;
+                this.group.add(waterMesh);
+
+                // Riverbed boulders & stones in the brook
+                for (let rb = -4; rb <= 4; rb += 1.8) {
+                    const rbx = pierPos.x + Math.sin(streamPerp) * rb + (rand() - 0.5) * 0.6;
+                    const rbz = pierPos.z - Math.cos(streamPerp) * rb + (rand() - 0.5) * 0.6;
+                    const rbs = 0.18 + rand() * 0.22;
+                    batch.add(new THREE.DodecahedronGeometry(rbs), stoneMat, rbx, streamY + rbs * 0.35, rbz, rand() * 0.4, rand() * Math.PI, 0);
+                    batch.add(snowSlab(rbs * 0.7, 0.04, rbs * 0.7), snowSlabMaterial, rbx, streamY + rbs * 0.7, rbz);
+                }
+
+                // C. Waterfall Spray & Mist Puff rising from the brook
+                const mist = new MistPuff(this.group, { count: 32, radius: 0.45, height: 0.7, size: 28, opacity: 0.45 });
+                mist.points.position.set(pierPos.x, streamY + 0.15, pierPos.z);
+                this.updatables.push(mist);
             }
         }
 
@@ -3004,6 +3141,29 @@ class AlpineChunk {
                     // Protective Swiss gabled roof cap with snow slab
                     batch.add(new THREE.ConeGeometry(0.22, 0.16, 4), woodRail, signP.x, py + 1.92, signP.z, 0, Math.PI / 4, 0);
                     batch.add(snowSlab(0.28, 0.05, 0.28), snowSlabMaterial, signP.x, py + 1.98, signP.z);
+                }
+            }
+        }
+
+        // Authentic Swiss Mountain Pass Elevation Signboards
+        if (this.world && this.world.objects) {
+            const objs = this.world.objects.filter(o => o.x >= ox && o.x < ox + CHUNK_SIZE && o.z >= oz && o.z < oz + CHUNK_SIZE);
+            for (const o of objs) {
+                if (o.type === "alpine_roundabout_center") {
+                    createAlpineSignboard(this.group, "BELLEVUE ROTARY", "2,120 m  •  B-02", o.x - 4.5, getContinuousAlpineHeight(o.x - 4.5, o.z - 4.5, this.world) + 0.08, o.z - 4.5, Math.PI / 4, snowSlabMaterial);
+                }
+            }
+        }
+        if (this.world && this.world.edges) {
+            for (const e of this.world.edges) {
+                if (e.id?.includes("alp-vd-") && e.id?.endsWith("-1")) {
+                    const a = this.world.byId[e.a];
+                    if (a && a.x >= ox && a.x < ox + CHUNK_SIZE && a.z >= oz && a.z < oz + CHUNK_SIZE) {
+                        const hEdge = heading(a, this.world.byId[e.b]);
+                        const signPos = move(a, hEdge + Math.PI / 2, 2.2);
+                        const sy = getContinuousAlpineHeight(signPos.x, signPos.z, this.world);
+                        createAlpineSignboard(this.group, "GLACIER GORGE", "1,840 m  •  V-04", signPos.x, sy + 0.08, signPos.z, hEdge, snowSlabMaterial);
+                    }
                 }
             }
         }
@@ -3500,13 +3660,23 @@ export class AlpinePassage {
         for (const chunk of this.chunks.values()) {
             for (const u of chunk.updatables) {
                 try {
-                    if (u === chunk.stream) u.update(dt, U.uFlowTime.value);
-                    else if (u === chunk.bridge) u.update(controller.time);
-                    else if (u === chunk.chalet) u.update(controller.time);
-                    else if (u === chunk.windmill) u.update(dt, U.uWindTime.value);
-                    else if (u === chunk.campfire) u.update(this.time || 0, (controller.season.fire || 0) * (controller.time.evening || 0));
-                    else if (u === chunk.chimneySmoke) u.update(dt, controller.season.smoke || 0, controller.time.night || 0);
-                    else if (u === chunk.birds) u.update(dt, this.time || 0, controller.season.birds || 0);
+                    if (u instanceof ChimneySmoke || u === chunk.chimneySmoke) {
+                        u.update(dt, controller.season.smoke || 0, controller.time.night || 0);
+                    } else if (u instanceof Campfire || u === chunk.campfire) {
+                        u.update(this.time || 0, (controller.season.fire || 0) * (controller.time.evening || 0));
+                    } else if (u instanceof MistPuff) {
+                        u.update?.(dt);
+                    } else if (u === chunk.stream) {
+                        u.update(dt, U.uFlowTime.value);
+                    } else if (u === chunk.bridge) {
+                        u.update(controller.time);
+                    } else if (u === chunk.chalet) {
+                        u.update(controller.time);
+                    } else if (u === chunk.windmill) {
+                        u.update(dt, U.uWindTime.value);
+                    } else if (u === chunk.birds) {
+                        u.update(dt, this.time || 0, controller.season.birds || 0, playerPos);
+                    }
                 } catch (e) {}
             }
         }
@@ -3526,5 +3696,5 @@ export {
     BRIDGE_X, BRIDGE_Z, BRIDGE_ALONG, PEAK_X, PEAK_Z, HUT_X, HUT_Z,
     WINDMILL_X, WINDMILL_Z, CAMP_X, CAMP_Z, CAMERA_PRESETS,
     getTerrainHeight, getContinuousAlpineHeight, distanceToStream, getLateralRoadDist,
-    Terrain, Stream, Bridge, Vegetation, Chalet, Windmill, Campfire, BirdFlock, ChimneySmoke, Traffic, AlpineChunk
+    Terrain, Stream, Bridge, Vegetation, Chalet, Windmill, Campfire, BirdFlock, ChimneySmoke, Traffic, AlpineChunk, CAR_SHARED
 };

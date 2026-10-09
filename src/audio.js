@@ -22,9 +22,37 @@ export class DriveAudio {
     this.rainSource = null;
     this.skidGain = null;
     this.skidSource = null;
+
+    // Alpine Four-Seasons Background Music Score
+    this.musicAudio = null;
+  }
+
+  initMusic() {
+    if (this.musicAudio || typeof window === "undefined") return;
+    try {
+      this.musicAudio = new Audio("./four-seasons-2.mp3");
+      this.musicAudio.loop = true;
+      this.musicAudio.volume = this.muted ? 0 : 0.38;
+    } catch (e) {
+      console.warn("Background music init failed", e);
+    }
+  }
+
+  playMusic() {
+    this.initMusic();
+    if (this.musicAudio && !this.muted && this.musicAudio.paused) {
+      this.musicAudio.play().catch(() => {});
+    }
+  }
+
+  pauseMusic() {
+    if (this.musicAudio && !this.musicAudio.paused) {
+      this.musicAudio.pause();
+    }
   }
 
   ensureContext() {
+    this.initMusic();
     if (this.ctx) {
       if (this.ctx.state === "suspended") this.ctx.resume();
       return true;
@@ -274,10 +302,27 @@ export class DriveAudio {
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.muted ? 0 : 0.6, this.ctx.currentTime, 0.05);
     }
+    if (this.musicAudio) {
+      this.musicAudio.muted = this.muted;
+      if (!this.muted) {
+        this.playMusic();
+      } else {
+        this.pauseMusic();
+      }
+    }
     return this.muted;
   }
 
   update(sim, dt) {
+    // 0. Alpine Four-Seasons Background Music Management
+    if (sim?.world?.type === "alpine") {
+      if (!this.muted && this.musicAudio && this.musicAudio.paused) {
+        this.playMusic();
+      }
+    } else {
+      this.pauseMusic();
+    }
+
     if (!this.ctx || this.muted || !this.masterGain) return;
     const now = this.ctx.currentTime;
     const v = sim.player;
