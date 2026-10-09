@@ -2659,7 +2659,8 @@ body.cinematic-mode .minimap,
 body.cinematic-mode #hud,
 body.cinematic-mode .dual-brain-panel,
 body.cinematic-mode #game-matrix-panel,
-body.cinematic-mode #fork-nav-selector {
+body.cinematic-mode #fork-nav-selector,
+body.cinematic-mode #perf-hud {
   opacity: 0 !important;
   pointer-events: none !important;
   transform: translateY(-16px);
@@ -2700,6 +2701,131 @@ body.cinematic-mode .bottom-hud {
 
 body.cinematic-mode #cinematic-pill {
   display: inline-flex;
+}
+
+/* Unified Topbar Performance Cluster & Bloom Mode Toggle */
+.topbar-perf-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  height: 28px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.perf-fps-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.perf-fps-badge:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.fps-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981cc;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.fps-dot.fps-good {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981cc;
+}
+
+.fps-dot.fps-medium {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0bcc;
+}
+
+.fps-dot.fps-bad {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444cc;
+}
+
+.perf-fps-badge b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.perf-fps-badge .fps-unit {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.perf-fps-badge .fps-ms {
+  font-size: 10px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  margin-left: 2px;
+}
+
+.bloom-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.bloom-mode-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0f172a;
+}
+
+.bloom-mode-btn.bloom-active {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(168, 85, 247, 0.15));
+  color: #be185d;
+  border-color: rgba(236, 72, 153, 0.3);
+  box-shadow: 0 0 8px rgba(236, 72, 153, 0.2);
+}
+
+.bloom-mode-btn kbd {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.85);
+  color: #64748b;
+}
+
+@media (max-width: 950px) {
+  .topbar-perf-cluster {
+    padding-left: 6px;
+    gap: 4px;
+  }
+  .perf-fps-badge .fps-ms {
+    display: none;
+  }
 }
 
 

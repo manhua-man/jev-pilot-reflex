@@ -611,6 +611,8 @@ export class DriveScene {
     this.scene.add(this.sun.target);
 
     // Initialize Four-Seasons Post-Processing Pipeline
+    // Default to false (ultra-fast 60 FPS direct WebGL render), toggleable with Bloom key/button
+    this.useComposer = false;
     if (this.composer) {
       try { this.composer.dispose(); } catch (_) {}
       this.composer = null;
@@ -623,15 +625,15 @@ export class DriveScene {
       Math.floor(initH * pr),
       {
         type: THREE.HalfFloatType,
-        samples: 4,
+        samples: 2,
       }
     );
     this.composer = new EffectComposer(this.renderer, composerTarget);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(initW, initH),
-      0.42,
-      0.5,
+      0.38,
+      0.45,
       1.0,
     );
     this.composer.addPass(this.bloom);
@@ -1414,6 +1416,9 @@ export class DriveScene {
   async prepare() {
     await this.ready;
     await assetsReady();
+    if (this.alpinePassage) {
+      this.alpinePassage.prewarm(this.sim.player);
+    }
     this.render(0, false);
     // Prepare shaders and upload assets behind the loader, before driving starts.
     await this.renderer.compileAsync(this.scene, this.camera);
@@ -2067,12 +2072,23 @@ export class DriveScene {
     }
 
     if (draw) {
-      if (this.composer) {
+      if (this.useComposer && this.composer) {
         this.composer.render(dt);
       } else {
         this.renderer.render(this.scene, this.camera);
       }
     }
+  }
+  setBloom(enabled) {
+    this.useComposer = !!enabled;
+    return this.useComposer;
+  }
+  toggleBloom() {
+    this.useComposer = !this.useComposer;
+    return this.useComposer;
+  }
+  isBloomEnabled() {
+    return !!this.useComposer;
   }
   setSeason(index) {
     if (this.seasons) this.seasons.setSeason(index);

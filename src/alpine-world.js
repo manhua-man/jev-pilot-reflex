@@ -2754,6 +2754,42 @@ function createAlpineSignboard(scene, title, subtitle, posX, posY, posZ, rotY, s
     return sign;
 }
 
+let _sharedStoneMat = null;
+let _sharedWoodRailMat = null;
+let _sharedTrunkMat = null;
+let _sharedNeedleMat = null;
+let _sharedButtercupMat = null;
+let _sharedEdelweissMat = null;
+let _sharedReflectorMat = null;
+function getSharedPropsMaterials() {
+    if (!_sharedStoneMat) {
+        const dusted = (color) => patchMaterial(stdMat(color, 0.9), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
+        _sharedStoneMat = dusted(0x6e6862);
+        _sharedWoodRailMat = patchMaterial(stdMat(0x6b4f3a, 0.9), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
+        _sharedTrunkMat = patchMaterial(stdMat(0x4a2f20, 0.9), { key: 'trunk-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
+        _sharedNeedleMat = patchMaterial(stdMat(0x1f4a2c, 0.85), {
+            key: 'needle-dusted',
+            worldNormal: true,
+            fragmentColor: /* glsl */`
+                diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 0.9, 1.0), uSeasonW.w);
+                diffuseColor.rgb *= mix(vec3(1.0), vec3(1.12, 1.1, 0.9), uSeasonW.x);
+            ` + snowDustCode('0.95')
+        });
+        _sharedButtercupMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 });
+        _sharedEdelweissMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 });
+        _sharedReflectorMat = new THREE.MeshStandardMaterial({ color: 0xffe5a1, emissive: 0xffa800, emissiveIntensity: 0.9, toneMapped: false });
+    }
+    return {
+        stoneMat: _sharedStoneMat,
+        woodRail: _sharedWoodRailMat,
+        trunkMat: _sharedTrunkMat,
+        needleMat: _sharedNeedleMat,
+        buttercupMat: _sharedButtercupMat,
+        edelweissMat: _sharedEdelweissMat,
+        reflectorMat: _sharedReflectorMat
+    };
+}
+
 class AlpineChunk {
     constructor(cx, cz, parentGroup, glowMaterials = [], world = null) {
         this.cx = cx;
@@ -2988,18 +3024,15 @@ class AlpineChunk {
         const oz = (this.cz - 0.5) * CHUNK_SIZE;
 
         const batch = new StaticBatch();
-        const dusted = (color) => patchMaterial(stdMat(color, 0.9), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
-        const stoneMat = dusted(0x6e6862);
-        const woodRail = patchMaterial(stdMat(0x6b4f3a, 0.9), { key: 'wood-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
-        const trunkMat = patchMaterial(stdMat(0x4a2f20, 0.9), { key: 'trunk-dusted', worldNormal: true, fragmentColor: snowDustCode('0.8') });
-        const needleMat = patchMaterial(stdMat(0x1f4a2c, 0.85), {
-            key: 'needle-dusted',
-            worldNormal: true,
-            fragmentColor: /* glsl */`
-                diffuseColor.rgb *= mix(vec3(1.0), vec3(0.82, 0.9, 1.0), uSeasonW.w);
-                diffuseColor.rgb *= mix(vec3(1.0), vec3(1.12, 1.1, 0.9), uSeasonW.x);
-            ` + snowDustCode('0.95')
-        });
+        const {
+            stoneMat,
+            woodRail,
+            trunkMat,
+            needleMat,
+            buttercupMat,
+            edelweissMat,
+            reflectorMat
+        } = getSharedPropsMaterials();
 
         const sharedWoodGeo = getSharedDeciduousWoodGeometry();
         const sharedCanopyGeo = getSharedDeciduousCanopyGeometry();
@@ -3204,8 +3237,18 @@ class AlpineChunk {
 
         // Alpine Wildflowers (yellow buttercups & pink edelweiss blossoms)
         const flowerCount = 38;
-        const buttercupMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 });
-        const edelweissMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 });
+        const flowerEdges = [];
+        if (this.world && this.world.edges && this.world.byId) {
+            const margin = CHUNK_SIZE * 0.7;
+            for (const e of this.world.edges) {
+                const a = this.world.byId[e.a], b = this.world.byId[e.b];
+                if (!a || !b) continue;
+                if (Math.min(a.x, b.x) > ox + CHUNK_SIZE + margin || Math.max(a.x, b.x) < ox - margin ||
+                    Math.min(a.z, b.z) > oz + CHUNK_SIZE + margin || Math.max(a.z, b.z) < oz - margin) continue;
+                const dx = b.x - a.x, dz = b.z - a.z;
+                flowerEdges.push({ a, dx, dz, l2: dx * dx + dz * dz, marginSq: ((e.width || 1.4) / 2 + 0.35) ** 2 });
+            }
+        }
         for (let f = 0; f < flowerCount; f++) {
             const fx = ox + 1.0 + (hash(this.cx * 53 + f * 19, this.cz * 31 + f * 29) % 1) * (CHUNK_SIZE - 2.0);
             const fz = oz + 1.0 + (hash(this.cz * 47 + f * 23, this.cx * 61 + f * 17) % 1) * (CHUNK_SIZE - 2.0);
@@ -3213,19 +3256,14 @@ class AlpineChunk {
             if (fy > 3.0 || fy < 0.1) continue;
 
             let nearRoad = false;
-            if (this.world && this.world.edges && this.world.byId) {
-                for (const e of this.world.edges) {
-                    const a = this.world.byId[e.a], b = this.world.byId[e.b];
-                    if (!a || !b) continue;
-                    const dx = b.x - a.x, dz = b.z - a.z;
-                    const l2 = dx * dx + dz * dz;
-                    if (!l2) continue;
-                    const t = clamp(((fx - a.x) * dx + (fz - a.z) * dz) / l2, 0, 1);
-                    const flowerMargin = (e.width || 1.4) / 2 + 0.35;
-                    if (Math.hypot(fx - (a.x + t * dx), fz - (a.z + t * dz)) < flowerMargin) {
-                        nearRoad = true;
-                        break;
-                    }
+            for (let i = 0; i < flowerEdges.length; i++) {
+                const fe = flowerEdges[i];
+                if (!fe.l2) continue;
+                const t = clamp(((fx - fe.a.x) * fe.dx + (fz - fe.a.z) * fe.dz) / fe.l2, 0, 1);
+                const ex = fx - (fe.a.x + t * fe.dx), ez = fz - (fe.a.z + t * fe.dz);
+                if (ex * ex + ez * ez < fe.marginSq) {
+                    nearRoad = true;
+                    break;
                 }
             }
             if (nearRoad) continue;
@@ -3264,8 +3302,9 @@ class AlpineChunk {
         }
 
         // Road guardrails (clean timber posts with amber reflectors & winter snow caps)
-        const reflectorMat = new THREE.MeshStandardMaterial({ color: 0xffe5a1, emissive: 0xffa800, emissiveIntensity: 0.9, toneMapped: false });
-        if (this.glowMaterials) this.glowMaterials.push({ material: reflectorMat, key: 'reflector' });
+        if (this.glowMaterials && !this.glowMaterials.some(g => g.material === reflectorMat)) {
+            this.glowMaterials.push({ material: reflectorMat, key: 'reflector' });
+        }
         if (this.world && this.world.edges && this.world.byId) {
             for (const e of this.world.edges) {
                 const a = this.world.byId[e.a], b = this.world.byId[e.b];
@@ -3887,6 +3926,20 @@ export class AlpinePassage {
             this.chunks.set(key, chunk);
         }
         return this.chunks.get(key);
+    }
+
+    prewarm(playerPos) {
+        const CHUNK_SIZE = 15.0;
+        let fcx = 0, fcz = 0;
+        if (playerPos && Number.isFinite(playerPos.x) && Number.isFinite(playerPos.z)) {
+            fcx = Math.round(playerPos.x / CHUNK_SIZE);
+            fcz = Math.round(playerPos.z / CHUNK_SIZE);
+        }
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                this.ensureChunk(fcx + dx, fcz + dz);
+            }
+        }
     }
 
     update(dt, controller, playerPos = null, world = null, cameraPos = null) {

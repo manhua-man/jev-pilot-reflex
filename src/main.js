@@ -143,6 +143,11 @@ let configured = true,
   uiTime = 0,
   lastNow = performance.now(),
   toastTimer,
+  frameCount = 0,
+  lastFpsTime = performance.now(),
+  currentFps = 60,
+  currentFrameMs = "16.6",
+  lowFpsSeconds = 0,
   lastMatrixRender = 0,
   crashHandled = false;
 const keys = new Set(),
@@ -158,7 +163,7 @@ const keys = new Set(),
   };
 $("app").innerHTML = `
 <main class="drive-area" aria-label="3D driving simulator"><canvas id="world-canvas" aria-label="Interactive three-dimensional driving world"></canvas><div id="vector-labels" aria-label="Jev motion vector probabilities"></div></main>
-<header class="topbar glass"><a href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" class="brand" aria-label="Jev Pilot Reflex"><img class="brand-mark" src="${import.meta.env.BASE_URL || "./"}brand/standard-agents-mark.svg" alt=""/><b>Jev Pilot Reflex</b></a><div class="world-picker"><div class="model-mode-selector" title="智驾具身范式演进：VLA / WA / WLA + Jev"><button id="mode-vla" class="mode-btn active" data-mode="vla" title="VLA + Jev: 视觉-语言-动作协同 + 物理安全盾">🟣 VLA+Jev</button><button id="mode-wa" class="mode-btn" data-mode="wa" title="WA + Jev: 生成式时空世界模型推演 + 物理安全盾">🌐 WA+Jev</button><button id="mode-wla" class="mode-btn" data-mode="wla" title="WLA + Jev: 世界模型-语言意图-动作全闭环 + 物理安全盾">⚡ WLA+Jev</button></div><div class="seasons-dock-picker" title="Four Seasons · 四季时空 (快捷键 1/2/3/4)"><button id="season-spring" class="season-btn" data-season="0" title="春和景明 (Spring) · 樱花落瓣 · 快捷键 1">🌸 春</button><button id="season-summer" class="season-btn active" data-season="1" title="夏木葱茏 (Summer) · 金色花粉与萤火 · 快捷键 2">☀️ 夏</button><button id="season-autumn" class="season-btn" data-season="2" title="霜染红枫 (Autumn) · 枫叶漫卷 · 快捷键 3">🍁 秋</button><button id="season-winter" class="season-btn" data-season="3" title="银装素裹 (Winter) · 晴雪反光 · 快捷键 4">❄️ 冬</button></div><div class="times-dock-picker" title="Time of Day · 昼夜流转 (快捷键 7/8/9)"><button id="time-sunset" class="time-btn active" data-time="0" title="落日余晖 (Sunset) · 暖金长影 · 快捷键 7">🌅 暮色</button><button id="time-noon" class="time-btn" data-time="1" title="高天丽日 (Noon) · 正午通透 · 快捷键 8">☀️ 正午</button><button id="time-night" class="time-btn" data-time="2" title="静谧星月 (Night) · 银河月晕 · 快捷键 9">🌙 星夜</button></div><div class="weather-picker" title="气象模式切换 (联动地面物理附着力与视距)"><button id="weather-clear" class="weather-btn active" title="晴天模式 · 干燥路面 (μ=0.90)">☀️ 晴天</button><button id="weather-rain" class="weather-btn" title="暴雨模式 · 湿滑路面 (μ=0.52)">🌧️ 暴雨</button><button id="weather-night" class="weather-btn" title="暗夜雨雾 · 视距极限探路">🌙 暗夜</button></div><select id="world-select" aria-label="World environment"><option value="alpine">🏔️ Alpine Passage (四季山口 · 自然美景)</option><option value="city">🏙️ Skyline City (城市天际线 · 现代都市)</option><option value="town">🏡 Small town (风情小镇 · 林荫道)</option><option value="highway">🛣️ Interstate 08 (高速公路 · 开阔畅行)</option></select><button id="new-world" title="Refresh world" aria-label="Refresh world">${icon("rotate-cw")}</button><a id="github-link" href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" aria-label="View Jev Pilot Reflex on GitHub (opens in a new tab)" title="View on GitHub">${icon("github")}</a></div></header>
+<header class="topbar glass"><a href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" class="brand" aria-label="Jev Pilot Reflex"><img class="brand-mark" src="${import.meta.env.BASE_URL || "./"}brand/standard-agents-mark.svg" alt=""/><b>Jev Pilot Reflex</b></a><div class="world-picker"><div class="model-mode-selector" title="智驾具身范式演进：VLA / WA / WLA + Jev"><button id="mode-vla" class="mode-btn active" data-mode="vla" title="VLA + Jev: 视觉-语言-动作协同 + 物理安全盾">🟣 VLA+Jev</button><button id="mode-wa" class="mode-btn" data-mode="wa" title="WA + Jev: 生成式时空世界模型推演 + 物理安全盾">🌐 WA+Jev</button><button id="mode-wla" class="mode-btn" data-mode="wla" title="WLA + Jev: 世界模型-语言意图-动作全闭环 + 物理安全盾">⚡ WLA+Jev</button></div><div class="seasons-dock-picker" title="Four Seasons · 四季时空 (快捷键 1/2/3/4)"><button id="season-spring" class="season-btn" data-season="0" title="春和景明 (Spring) · 樱花落瓣 · 快捷键 1">🌸 春</button><button id="season-summer" class="season-btn active" data-season="1" title="夏木葱茏 (Summer) · 金色花粉与萤火 · 快捷键 2">☀️ 夏</button><button id="season-autumn" class="season-btn" data-season="2" title="霜染红枫 (Autumn) · 枫叶漫卷 · 快捷键 3">🍁 秋</button><button id="season-winter" class="season-btn" data-season="3" title="银装素裹 (Winter) · 晴雪反光 · 快捷键 4">❄️ 冬</button></div><div class="times-dock-picker" title="Time of Day · 昼夜流转 (快捷键 7/8/9)"><button id="time-sunset" class="time-btn active" data-time="0" title="落日余晖 (Sunset) · 暖金长影 · 快捷键 7">🌅 暮色</button><button id="time-noon" class="time-btn" data-time="1" title="高天丽日 (Noon) · 正午通透 · 快捷键 8">☀️ 正午</button><button id="time-night" class="time-btn" data-time="2" title="静谧星月 (Night) · 银河月晕 · 快捷键 9">🌙 星夜</button></div><div class="weather-picker" title="气象模式切换 (联动地面物理附着力与视距)"><button id="weather-clear" class="weather-btn active" title="晴天模式 · 干燥路面 (μ=0.90)">☀️ 晴天</button><button id="weather-rain" class="weather-btn" title="暴雨模式 · 湿滑路面 (μ=0.52)">🌧️ 暴雨</button><button id="weather-night" class="weather-btn" title="暗夜雨雾 · 视距极限探路">🌙 暗夜</button></div><select id="world-select" aria-label="World environment"><option value="alpine">🏔️ Alpine Passage (四季山口 · 自然美景)</option><option value="city">🏙️ Skyline City (城市天际线 · 现代都市)</option><option value="town">🏡 Small town (风情小镇 · 林荫道)</option><option value="highway">🛣️ Interstate 08 (高速公路 · 开阔畅行)</option></select><button id="new-world" title="Refresh world" aria-label="Refresh world">${icon("rotate-cw")}</button><a id="github-link" href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" aria-label="View Jev Pilot Reflex on GitHub (opens in a new tab)" title="View on GitHub">${icon("github")}</a></div><div class="topbar-perf-cluster" id="perf-hud"><div class="perf-fps-badge" id="perf-fps-click" title="实时帧率检测 · 点击或按 F 切换渲染性能模式"><span class="fps-dot fps-good" id="fps-dot"></span><b id="fps-val">60</b><span class="fps-unit">FPS</span><span class="fps-ms" id="fps-ms-val">16.6ms</span></div><button id="bloom-btn" class="bloom-mode-btn" title="切换渲染模式: ⚡ 极速 60FPS vs 🌸 影视级泛光 (快捷键: F)"><span class="bloom-icon">⚡</span><span id="bloom-label">极速 60FPS</span><kbd>F</kbd></button></div></header>
 <div class="navigation-hud"><div class="navigation-card glass"><span id="turn-icon">${icon("arrow-up")}</span><div><strong id="next-maneuver">Continue straight</strong><span id="turn-distance"></span></div><span class="nav-divider"></span><span id="remaining"></span><button id="map-toggle" aria-label="Toggle route map" aria-pressed="true" title="Hide route map">${icon("map")}</button></div><div class="fork-nav-selector glass" id="fork-nav-selector"><span class="fork-title">高速分岔导航预选</span><div class="fork-btn-group"><button id="fork-choose-left" class="fork-btn active" title="预选 ↖ 机场快速路 (科技城)"><span class="fork-arrow">↖</span> 机场快速路</button><button id="fork-choose-right" class="fork-btn" title="预选 ↗ 中心商务区 (金融街)"><span class="fork-arrow">↗</span> 金融街 CBD</button></div></div>
 <div id="minimap" class="minimap glass"><div class="minimap-toolbar" role="toolbar" aria-label="Minimap controls"><button id="map-drag" aria-label="Move minimap" title="Move minimap · drag or use arrow keys">${icon("grip")}</button><div><button id="map-zoom-out" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button><button id="map-zoom-in" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button><button id="map-reset" aria-label="Reset minimap" title="Reset map position, zoom and following">${icon("rotate-ccw")}</button></div></div><canvas id="map-canvas" width="380" height="310" aria-label="Route map. Drag to pan, scroll to zoom, double-click to follow the car."></canvas></div></div>
 <div id="paused-overlay" hidden><div class="glass"><span>${icon("pause")} Paused</span><button id="resume" class="primary">Resume driving</button></div></div>
@@ -171,7 +176,7 @@ $("app").innerHTML = `
 <dialog id="credit-dialog" aria-labelledby="credit-title"><span class="eyebrow">THANKS FOR TAKING A DRIVE</span><h2 id="credit-title">That's your free lap.</h2><p>Your $0.25 of Jev play credit has been used. You can keep exploring with manual controls.</p><button id="credit-close" class="primary">Keep driving manually</button><a href="https://standardagents.ai/" target="_blank" rel="noopener noreferrer">Explore Standard Agents ↗</a></dialog>
 <div id="toast" role="status" hidden></div>
 <dialog id="json-dialog"><div class="json-header"><div>${icon("braces")}<strong>Under the hood</strong><span id="json-live">LIVE · 4 Hz</span></div><button id="close-json" aria-label="Close JSON inspector">${icon("x")}</button></div><div class="json-toolbar"><div class="json-tabs"><button data-tab="request" class="active">Jev input</button><button data-tab="sensor">Perception</button><button data-tab="world">Full world</button><button data-tab="decision">Response</button></div><div class="json-actions"><button id="freeze-json">Freeze</button><button id="copy-json" aria-label="Copy displayed JSON">${icon("copy")} <span id="copy-json-label" aria-live="polite">Copy</span></button><button id="download-json">${icon("download")} Download</button></div></div><p id="json-description">Exact Jev API payload, including instructions and offered choices. Full geometry and control details stay local.</p><pre id="json-content"></pre></dialog>
-<dialog id="help-dialog"><button id="close-help" class="dialog-close" aria-label="Close help">${icon("x")}</button><span class="eyebrow">YOUR NEXT DRIVE</span><h2>Take the wheel.</h2><p class="touch-help">Use the thumbstick to steer. Push up to accelerate, pull down to brake and reverse. Release to coast; hold Brake to stop.</p><div class="help-keys"><span><kbd>W / ↑</kbd> Hold accelerator</span><span><kbd>S / ↓</kbd> Brake / reverse</span><span><kbd>A / D</kbd> Steer</span><span><kbd>SPACE</kbd> Brake</span><span><kbd>J</kbd> Jev autopilot</span><span><kbd>L</kbd> VLA 语言指令</span><span><kbd>E</kbd> 模拟鬼探头</span><span><kbd>G</kbd> 激进加塞博弈</span><span><kbd>Z</kbd> 拉链交替汇流</span><span><kbd>T</kbd> 大货车借道超车</span><span><kbd>K</kbd> 施工避障</span><span><kbd>R</kbd> 环岛让行</span><span><kbd>I</kbd> 无尽巡航</span><span><kbd>U</kbd> 轨迹数据录制</span><span><kbd>N</kbd> 神经网络策略</span><span><kbd>B</kbd> 双脑遥测</span><span><kbd>M</kbd> 具身空间声浪</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Pause</span><span><kbd>?</kbd> Keyboard help</span></div><p>Drag the scene to orbit in Chase or Bird’s eye; drag to look around in Driver view. Scroll to zoom outside; double-click to recenter. Tap A/D for small corrections; hold for a sharper turn and release to recenter. Hold W to accelerate; release to coast with drag. S brakes, then reverses once stopped. Space applies the brake. Autopilot sets target speed directly.</p><p>The bright blue line is Jev's selected three-second plan. Use Candidates to see the sampled paths: forward in blue/cyan, reverse in purple, lane departures in amber, and predicted collisions in orange. Choice probabilities are available in the JSON inspector. The safety brake can reduce speed for a missed hazard; interventions are shown beside the autopilot button.</p><p class="asset-credits">Vehicle: <a href="https://sketchfab.com/3d-models/tesla-model-y-2021-c0a86cac582d4b33aba0fb1b1912d970" target="_blank" rel="noreferrer">Tesla Model Y 2021</a> by 763468712, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. Geometry adapted by Tina 3D Tesla; optimized, re-materialed, and wheel-rigged for JevPilot. Tree, shrub, streetlight, surface textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noreferrer">Poly Haven</a>, CC0.</p><p>Driving keys take back control. Use the JSON button for live inputs, full world state, probabilities, and session telemetry.</p></dialog>`;
+<dialog id="help-dialog"><button id="close-help" class="dialog-close" aria-label="Close help">${icon("x")}</button><span class="eyebrow">YOUR NEXT DRIVE</span><h2>Take the wheel.</h2><p class="touch-help">Use the thumbstick to steer. Push up to accelerate, pull down to brake and reverse. Release to coast; hold Brake to stop.</p><div class="help-keys"><span><kbd>W / ↑</kbd> Hold accelerator</span><span><kbd>S / ↓</kbd> Brake / reverse</span><span><kbd>A / D</kbd> Steer</span><span><kbd>SPACE</kbd> Brake</span><span><kbd>J</kbd> Jev autopilot</span><span><kbd>L</kbd> VLA 语言指令</span><span><kbd>E</kbd> 模拟鬼探头</span><span><kbd>G</kbd> 激进加塞博弈</span><span><kbd>Z</kbd> 拉链交替汇流</span><span><kbd>T</kbd> 大货车借道超车</span><span><kbd>K</kbd> 施工避障</span><span><kbd>R</kbd> 环岛让行</span><span><kbd>I</kbd> 无尽巡航</span><span><kbd>U</kbd> 轨迹数据录制</span><span><kbd>N</kbd> 神经网络策略</span><span><kbd>B</kbd> 双脑遥测</span><span><kbd>M</kbd> 具身空间声浪</span><span><kbd>F</kbd> 极速/泛光</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Pause</span><span><kbd>?</kbd> Keyboard help</span></div><p>Drag the scene to orbit in Chase or Bird’s eye; drag to look around in Driver view. Scroll to zoom outside; double-click to recenter. Tap A/D for small corrections; hold for a sharper turn and release to recenter. Hold W to accelerate; release to coast with drag. S brakes, then reverses once stopped. Space applies the brake. Autopilot sets target speed directly.</p><p>The bright blue line is Jev's selected three-second plan. Use Candidates to see the sampled paths: forward in blue/cyan, reverse in purple, lane departures in amber, and predicted collisions in orange. Choice probabilities are available in the JSON inspector. The safety brake can reduce speed for a missed hazard; interventions are shown beside the autopilot button.</p><p class="asset-credits">Vehicle: <a href="https://sketchfab.com/3d-models/tesla-model-y-2021-c0a86cac582d4b33aba0fb1b1912d970" target="_blank" rel="noreferrer">Tesla Model Y 2021</a> by 763468712, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>. Geometry adapted by Tina 3D Tesla; optimized, re-materialed, and wheel-rigged for JevPilot. Tree, shrub, streetlight, surface textures and sky: <a href="https://polyhaven.com" target="_blank" rel="noreferrer">Poly Haven</a>, CC0.</p><p>Driving keys take back control. Use the JSON button for live inputs, full world state, probabilities, and session telemetry.</p></dialog>`;
 $("app").insertAdjacentHTML(
   "beforeend",
   `
@@ -192,6 +197,55 @@ const scene = new DriveScene($("world-canvas"), sim, $("vector-labels")),
   map = $("map-canvas").getContext("2d");
 window.scene = scene;
 scene.setWorldActionModel(worldActionModel);
+
+function updatePerfHUD(fps, ms) {
+  const fpsVal = $("fps-val");
+  const fpsMs = $("fps-ms-val");
+  const fpsDot = $("fps-dot");
+  const cineFps = $("cinematic-fps");
+  if (fpsVal) fpsVal.textContent = fps;
+  if (fpsMs) fpsMs.textContent = `${ms}ms`;
+  if (cineFps) {
+    cineFps.textContent = `${fps} FPS (${ms}ms)`;
+    cineFps.style.color = fps >= 50 ? "#10b981" : fps >= 30 ? "#f59e0b" : "#ef4444";
+  }
+  if (fpsDot) {
+    fpsDot.className = "fps-dot " + (fps >= 50 ? "fps-good" : fps >= 30 ? "fps-medium" : "fps-bad");
+  }
+}
+
+function updateBloomUI() {
+  const isBloom = scene.isBloomEnabled();
+  const btn = $("bloom-btn");
+  const label = $("bloom-label");
+  const iconSpan = btn?.querySelector(".bloom-icon");
+  if (btn) {
+    btn.classList.toggle("bloom-active", isBloom);
+  }
+  if (label) {
+    label.textContent = isBloom ? "泛光: 开启" : "极速 60FPS";
+  }
+  if (iconSpan) {
+    iconSpan.textContent = isBloom ? "🌸" : "⚡";
+  }
+}
+
+function toggleBloom(notify = true) {
+  const enabled = scene.toggleBloom();
+  updateBloomUI();
+  if (notify) {
+    if (enabled) {
+      toast("🌸 影视级泛光模式已开启 (UnrealBloom) · 如遇掉帧可按 F 切回极速模式", "info");
+    } else {
+      toast("⚡ 极速性能模式已开启 (直接渲染 60 FPS 无卡顿)", "success");
+    }
+  }
+}
+
+$("bloom-btn")?.addEventListener("click", () => toggleBloom());
+$("perf-fps-click")?.addEventListener("click", () => toggleBloom());
+updateBloomUI();
+
 const minimap = new MinimapControls($("minimap"), sim, drawMap);
 const tooltips = new Tooltips();
 const touch = new TouchControls(
@@ -399,6 +453,8 @@ async function finishLoading() {
     await document.fonts.ready;
   } catch (_e) {}
   lastNow = performance.now();
+  lastFpsTime = performance.now();
+  frameCount = 0;
   loading = false;
   hideLoading();
   touch.sync();
@@ -430,7 +486,7 @@ function toggleCinematic(force) {
   if (!pill) {
     pill = document.createElement("div");
     pill.id = "cinematic-pill";
-    pill.innerHTML = `<span style="font-size:16px;">🏔️</span><strong>Alpine Passage</strong><span style="opacity:0.65;font-size:12px;">按 H 或点击退出纯景</span>`;
+    pill.innerHTML = `<span style="font-size:16px;">🏔️</span><strong>Alpine Passage</strong><span id="cinematic-fps" style="font-family:monospace;font-size:12px;color:#10b981;font-weight:700;margin-left:4px;">60 FPS (16.6ms)</span><span style="opacity:0.65;font-size:12px;">按 H 退出 · 按 F 切换泛光</span>`;
     pill.addEventListener("click", () => toggleCinematic(false));
     document.body.appendChild(pill);
   }
@@ -778,6 +834,7 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (e.code === "KeyM") toggleAudio();
+  if (e.code === "KeyF") toggleBloom();
   if (e.code === "KeyH") toggleCinematic();
   if (e.code === "Escape" && document.body.classList.contains("cinematic-mode")) toggleCinematic(false);
   if (e.code === "Digit1") setSeasonIndex(0);
@@ -1758,7 +1815,31 @@ function animate(now) {
   const pNow = performance.now();
   const dt = Math.max(0, Math.min((pNow - lastNow) / 1000, 0.1));
   lastNow = pNow;
+
   if (dt <= 0 || document.hidden || loading) return;
+
+  frameCount++;
+  if (pNow - lastFpsTime >= 1000) {
+    const elapsed = (pNow - lastFpsTime) / 1000;
+    currentFps = Math.max(1, Math.round(frameCount / elapsed));
+    currentFrameMs = (1000 / currentFps).toFixed(1);
+    frameCount = 0;
+    lastFpsTime = pNow;
+    updatePerfHUD(currentFps, currentFrameMs);
+
+    // Auto-adaptive guardian: if FPS < 45 for 3 consecutive seconds with bloom on, step down!
+    if (scene.isBloomEnabled() && currentFps < 45) {
+      lowFpsSeconds++;
+      if (lowFpsSeconds >= 3) {
+        scene.setBloom(false);
+        updateBloomUI();
+        toast("⚡ 检测到当前设备渲染负载较高 (<45 FPS)，已自动降级至【极速模式 (60 FPS)】以确保丝滑！(按 F 可随时重新开启)", "warning");
+        lowFpsSeconds = 0;
+      }
+    } else {
+      lowFpsSeconds = 0;
+    }
+  }
   touch.sync();
   if (!sim.paused && !sim.crash) {
     if (!sim.autopilot) {
