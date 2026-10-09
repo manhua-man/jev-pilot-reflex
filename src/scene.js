@@ -597,12 +597,12 @@ export class DriveScene {
       renderProfile.shadowSize,
     );
     Object.assign(this.sun.shadow.camera, {
-      left: -11,
-      right: 11,
-      top: 11,
-      bottom: -11,
+      left: -32,
+      right: 32,
+      top: 32,
+      bottom: -32,
       near: 4,
-      far: 44,
+      far: 95,
     });
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.025;
@@ -1441,6 +1441,15 @@ export class DriveScene {
     this.alpinePassage = new AlpinePassage(group, this.glowMaterials, false, world);
     this.alpinePassage.group.scale.set(1, 1, 1);
     this.alpinePassage.group.position.set(0, 0, 0);
+    Object.assign(this.sun.shadow.camera, {
+      left: -32,
+      right: 32,
+      top: 32,
+      bottom: -32,
+      near: 4,
+      far: 95,
+    });
+    this.sun.shadow.camera.updateProjectionMatrix();
   }
   render(dt, draw = true) {
     const { width, height } = this.viewport;
@@ -1971,7 +1980,8 @@ export class DriveScene {
       const LIGHT_POWER = 1.8;
       this.sun.color.copy(T.sunColor);
       this.sun.intensity = LIGHT_POWER * T.sunIntensity * (1 - S.cloudShade * 0.35);
-      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(22).add(new THREE.Vector3(v.x, 0, v.z));
+      const sunDist = this.sim.world.type === "alpine" ? 46 : 22;
+      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(sunDist).add(new THREE.Vector3(v.x, 0, v.z));
       this.sun.target.position.set(v.x, 0, v.z);
       this.sun.target.updateMatrixWorld();
 

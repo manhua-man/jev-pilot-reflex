@@ -219,14 +219,47 @@ function createSafeCanvas(w = 256, h = 256) {
             return h;
         }
 
+        function getAlpineRoadElevation(px, pz) {
+            const dGen = Math.max(0, Math.max(Math.abs(px), Math.abs(pz)) - 7.5);
+            const genBlend = clamp(dGen / 3.0, 0, 1);
+            const rawRoad = BASE_HEIGHT + valueNoise(px * 0.04 + 18.0, pz * 0.04 + 18.0) * 0.28 + valueNoise(px * 0.09, pz * 0.09) * 0.08;
+            return lerp(0.05, rawRoad, genBlend);
+        }
+
         function getRawAlpineMountainHeight(x, z) {
             let h = BASE_HEIGHT;
-            const nx = x * 0.09 + 25.0, nz = z * 0.09 + 25.0;
-            const ridge1 = Math.abs(valueNoise(nx, nz) - 0.5) * 2.0;
-            const ridge2 = Math.abs(valueNoise(nx * 2.1, nz * 2.1) - 0.5) * 2.0;
-            const massif = Math.pow(ridge1, 1.6) * 2.2 + Math.pow(ridge2, 1.4) * 0.8;
-            const rolling = valueNoise(x * 0.22, z * 0.22) * 0.6 + valueNoise(x * 0.55, z * 0.55) * 0.3;
+            // 1. Broad Alpine massifs and ridged mountain chains
+            const r1 = ridgedNoise(x * 0.09 + 25.0, z * 0.09 - 14.0);
+            const r2 = ridgedNoise(x * 0.18 + 7.0, z * 0.18 + 11.0);
+            const massif = Math.pow(r1, 1.45) * 3.4 + Math.pow(r2, 1.25) * 1.5;
+            const rolling = valueNoise(x * 0.22, z * 0.22) * 0.5 + valueNoise(x * 0.55, z * 0.55) * 0.25;
             h += massif + rolling;
+
+            // 2. Periodic dramatic Matterhorn-style pyramid horn summits across extended chunks
+            const GRID = 28.0;
+            const gx = Math.floor(x / GRID), gz = Math.floor(z / GRID);
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const cx = gx + dx, cz = gz + dz;
+                    if (Math.abs(cx) <= 0 && Math.abs(cz) <= 0) continue;
+                    const peakX = (cx + 0.5 + (hash(cx * 37 + 19, cz * 53 + 11) - 0.5) * 0.55) * GRID;
+                    const peakZ = (cz + 0.5 + (hash(cz * 43 + 29, cx * 61 + 17) - 0.5) * 0.55) * GRID;
+                    const dPeak = Math.hypot(x - peakX, z - peakZ);
+                    const peakR = 9.2;
+                    if (dPeak < peakR) {
+                        const t = 1 - dPeak / peakR;
+                        const ang = Math.atan2(z - peakZ, x - peakX);
+                        const faces = Math.pow(Math.abs(Math.cos(2 * (ang + 0.42))), 0.65);
+                        const body = Math.pow(t, 2.05) * 4.4;
+                        const horn = Math.pow(Math.max(0, 1 - Math.hypot(x - (peakX + 0.2), z - (peakZ - 0.15)) / 2.0), 1.35) * 1.85;
+                        const ridges = ridgedNoise(x * 0.85 + 11.3, z * 0.85 - 4.1);
+                        let ph = (body + horn) * (0.8 + ridges * 0.4);
+                        ph += faces * t * t * 0.9 * (0.55 + ridges * 0.6);
+                        ph += (valueNoise(x * 4.3, z * 4.3) - 0.5) * 0.2 * t;
+                        h = Math.max(h, ph);
+                    }
+                }
+            }
 
             const dEdge = Math.max(Math.abs(x), Math.abs(z)) - 7.5;
             if (dEdge < 3.5) {
@@ -253,25 +286,26 @@ function createSafeCanvas(w = 256, h = 256) {
                     for (const o of world.objects) {
                         if (o.type === "alpine_roundabout_center") {
                             const dRotary = Math.hypot(x - o.x, z - o.z);
-                            const R = 4.2;
-                            const rW = o.width || 2.2;
-                            if (dRotary < R + 3.8) {
+                            const R = 5.5;
+                            const rW = 2.8;
+                            const plateauR = R + rW / 2 + 1.8;
+                            if (dRotary < plateauR + 6.0) {
                                 if (o.baseH === undefined) {
-                                    o.baseH = getRawAlpineMountainHeight(o.x, o.z);
+                                    o.baseH = getAlpineRoadElevation(o.x, o.z);
                                 }
                                 const baseRotaryH = o.baseH;
                                 if (dRotary < R - rW / 2) {
                                     // Gentle landscaped center mound for stone fountain and pines (max +0.12m)
                                     const mound = Math.max(0, 1 - (dRotary / Math.max(0.1, R - rW / 2)) ** 2) * 0.12;
-                                    return baseRotaryH + mound;
-                                } else if (dRotary <= R + rW / 2 + 0.3) {
+                                    h = baseRotaryH + mound;
+                                } else if (dRotary <= plateauR) {
                                     // Road ring deck corridor is completely flat
-                                    return baseRotaryH;
+                                    h = baseRotaryH;
                                 } else {
                                     // Outer shoulder blends gently into surrounding mountains
-                                    const tOut = clamp((dRotary - (R + rW / 2 + 0.3)) / 2.8, 0, 1);
+                                    const tOut = clamp((dRotary - plateauR) / 6.0, 0, 1);
                                     const sOut = tOut * tOut * (3 - 2 * tOut);
-                                    return lerp(baseRotaryH, h, sOut);
+                                    h = lerp(baseRotaryH, h, sOut);
                                 }
                             }
                         }
@@ -294,15 +328,16 @@ function createSafeCanvas(w = 256, h = 256) {
                     if (d < minDist) {
                         minDist = d;
                         matchedRoadWidth = e.width || 1.4;
-                        targetRoadH = getRawAlpineMountainHeight(px, pz);
+                        targetRoadH = getAlpineRoadElevation(px, pz);
                     }
                 }
                 const roadShoulder = matchedRoadWidth / 2 + 0.8;
-                const blendMargin = 1.8;
+                const blendMargin = 3.6;
                 if (minDist < roadShoulder + blendMargin) {
                     const t = clamp((minDist - roadShoulder) / blendMargin, 0, 1);
                     const s = t * t * (3 - 2 * t);
-                    h = targetRoadH * (1 - s) + h * s;
+                    const roadCarvedH = targetRoadH * (1 - s) + h * s;
+                    h = Math.min(h, roadCarvedH);
                 }
             }
             return h;
