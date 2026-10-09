@@ -627,12 +627,12 @@ export function generateAlpine(seed, theme) {
     });
   };
 
-  // Main Mountain Pass Ridge (crossing stone arch bridge into wide 4-lane chalet plateau parkway)
-  link("alp-entry", "alp-0", "Alpine Pass · Valley Approach", 1.4);
-  link("alp-0", "alp-1", "Alpine Pass · Valley Approach", 1.4);
-  link("alp-1", "alp-2", "Alpine Pass · Pine Forest", 1.4);
-  link("alp-2", "alp-3", "Alpine Pass · Stream Viaduct", 1.4);
-  link("alp-3", "alp-4", "Alpine Pass · Stone Arch Bridge", 1.4);
+  // Main Mountain Pass Ridge (4-lane Alpine Parkway throughout)
+  link("alp-entry", "alp-0", "Alpine Pass · Valley Approach", 2.8);
+  link("alp-0", "alp-1", "Alpine Pass · Valley Approach", 2.8);
+  link("alp-1", "alp-2", "Alpine Pass · Pine Forest", 2.8);
+  link("alp-2", "alp-3", "Alpine Pass · Stream Viaduct", 2.8);
+  link("alp-3", "alp-4", "Alpine Pass · Grand Stone Viaduct", 2.8);
   link("alp-4", "alp-5", "Alpine Pass · Chalet Plateau Parkway", 2.8);
   link("alp-5", "alp-6", "Alpine Pass · Matterhorn Summit Parkway", 2.8);
   link("alp-6", "alp-7", "Alpine Pass · Boundary Crossing", 2.8);
@@ -752,16 +752,16 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       const np = move(cur, curH, 0.6);
       const nid = `alp-hp-${legIdx}-t1-${k}`;
       const node = addNode(nid, np.x, np.z);
-      link(cur.id, nid, `Hairpin Pass · Arc Left ${k + 1}`, 1.8);
+      link(cur.id, nid, `Hairpin Pass · Arc Left ${k + 1}`, 2.8);
       pathIds.push(nid);
       cur = node;
     }
 
-    // Ridge Traverse — short straight between the two hairpins (3-lane climbing section)
+    // Ridge Traverse — short straight between the two hairpins (4-lane climbing section)
     curH += 0.02;
     const pMid = move(cur, curH, 4.0);
     const nodeMid = addNode(`alp-hp-${legIdx}-mid`, pMid.x, pMid.z);
-    link(cur.id, nodeMid.id, "Hairpin Pass · Ridge Traverse Climbing Lane", 2.1);
+    link(cur.id, nodeMid.id, "Hairpin Pass · Ridge Traverse Climbing Lane", 2.8);
     pathIds.push(nodeMid.id);
     cur = nodeMid;
 
@@ -771,7 +771,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       const np = move(cur, curH, 0.6);
       const nid = `alp-hp-${legIdx}-t2-${k}`;
       const node = addNode(nid, np.x, np.z);
-      link(cur.id, nid, `Hairpin Pass · Arc Right ${k + 1}`, 1.8);
+      link(cur.id, nid, `Hairpin Pass · Arc Right ${k + 1}`, 2.8);
       pathIds.push(nid);
       cur = node;
     }
@@ -798,7 +798,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     const nodeJct = addNode(`alp-fk-${legIdx}-jct`, pJct.x, pJct.z);
     link(nodeIn.id, nodeJct.id, "Bifurcation Parkway Throat", 2.8);
 
-    // Left branch (Summit Scenic Pass ↖): 4 smooth progressive arc nodes (2-lane scenic pass)
+    // Left branch (Summit Scenic Pass ↖): 4 smooth progressive arc nodes (4-lane scenic pass)
     const leftNodes = [];
     const rightNodes = [];
     const branchSteps = 4;
@@ -820,12 +820,12 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     const pJoin = move(nodeJct, h0, 15.0);
     const nodeJoin = addNode(`alp-fk-${legIdx}-join`, pJoin.x, pJoin.z);
 
-    // Link left branch sequence (2-lane scenic pass)
-    link(nodeJct.id, leftNodes[0].id, "Summit Scenic Pass ↖", 1.8);
+    // Link left branch sequence (4-lane scenic pass)
+    link(nodeJct.id, leftNodes[0].id, "Summit Scenic Pass ↖", 2.8);
     for (let k = 0; k < branchSteps - 1; k++) {
-      link(leftNodes[k].id, leftNodes[k + 1].id, "Summit Scenic Pass ↖", 1.8);
+      link(leftNodes[k].id, leftNodes[k + 1].id, "Summit Scenic Pass ↖", 2.8);
     }
-    link(leftNodes[branchSteps - 1].id, nodeJoin.id, "Summit Descent", 1.8);
+    link(leftNodes[branchSteps - 1].id, nodeJoin.id, "Summit Descent", 2.8);
 
     // Link right branch sequence (4-lane Valley Tunnel Expressway ↗)
     link(nodeJct.id, rightNodes[0].id, "Valley Tunnel Expressway ↗", 2.8);
@@ -878,12 +878,12 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       rbNodes.push(n);
     }
 
-    // Link ring perimeter in one-way circle (Dual-lane 2.4m ring)
+    // Link ring perimeter in one-way circle (4-lane 2.8m ring)
     for (let k = 0; k < SEGMENTS; k++) {
-      link(rbNodes[k].id, rbNodes[(k + 1) % SEGMENTS].id, "Roundabout Dual Ring", 2.4);
+      link(rbNodes[k].id, rbNodes[(k + 1) % SEGMENTS].id, "Roundabout Multi Ring", 2.8);
     }
     // Tangential approach connects to perimeter node 0
-    link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 2.4);
+    link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 2.8);
 
     // Exit node: tangent at halfway node (k = 12) points away from center (4-lane Parkway Exit)
     const exitIdx = SEGMENTS / 2; // 12
@@ -951,7 +951,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       const np = move(cur, curH, villageSteps[k].d);
       const nid = `alp-vg-${legIdx}-${k}`;
       const node = addNode(nid, np.x, np.z, villageSteps[k].control);
-      link(cur.id, nid, villageSteps[k].name, 2.1);
+      link(cur.id, nid, villageSteps[k].name, 2.8);
       pathIds.push(nid);
       cur = node;
     }

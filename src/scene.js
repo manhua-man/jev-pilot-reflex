@@ -540,8 +540,8 @@ export class DriveScene {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.95;
-    this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 1200);
+    this.renderer.toneMappingExposure = 1.05;
+    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1200);
     this.viewport = { width: canvas.clientWidth, height: canvas.clientHeight };
     this.resizeObserver = new ResizeObserver(([entry]) => {
       this.viewport = entry.contentRect;
@@ -579,13 +579,13 @@ export class DriveScene {
         console.warn("Daylight environment unavailable", error),
       );
     this.glowMaterials = [];
-    this.seasons = new SeasonController(1, 1);
+    this.seasons = new SeasonController(1, 0); // Summer · Golden Sunset (iconic Four-Seasons diorama look)
     this.sky = new ProceduralSky(this.scene);
     this.weatherParticles = new SeasonalParticles(this.scene);
 
     this.weatherMode = "clear";
-    const FOG_BASE_DENSITY = 0.0055;
-    this.scene.fog = new THREE.FogExp2(0x9bc0d5, FOG_BASE_DENSITY);
+    const FOG_BASE_DENSITY = 0.017;
+    this.scene.fog = new THREE.FogExp2(0x263b42, FOG_BASE_DENSITY);
     U.uFogColor.value = this.scene.fog.color;
     this.hemiLight = new THREE.HemisphereLight("#cfe4ff", "#4d5a3c", 0.85);
     this.scene.add(this.hemiLight);
@@ -597,12 +597,12 @@ export class DriveScene {
       renderProfile.shadowSize,
     );
     Object.assign(this.sun.shadow.camera, {
-      left: -18,
-      right: 18,
-      top: 18,
-      bottom: -18,
+      left: -11,
+      right: 11,
+      top: 11,
+      bottom: -11,
       near: 4,
-      far: 48,
+      far: 44,
     });
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.025;
@@ -630,9 +630,9 @@ export class DriveScene {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(initW, initH),
-      0.22,
-      0.4,
-      1.35,
+      0.42,
+      0.5,
+      1.0,
     );
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -1892,9 +1892,9 @@ export class DriveScene {
     } else if (this.sim.world.type === "alpine") {
       const view = this.cameraInput.current();
       // True Four-Seasons Diorama Tilt-Shift Follow Cam:
-      // Uses stable isometric angle (45 deg) + user orbit drag,
-      // avoiding dizzying car-heading rotations while keeping the miniature diorama in full view
-      const orbitYaw = Math.PI / 4 + (view.yaw || 0);
+      // Uses stable oblique isometric angle (~67 deg) + user orbit drag,
+      // keeping the miniature diorama in full panoramic view
+      const orbitYaw = Math.PI / 4 + 0.38 + (view.yaw || 0);
       const pitch = Math.max(0.48, Math.min(1.15, view.pitch + 0.12));
       const dist = Math.max(5.2, Math.min(12.5, (view.distance || 12) * 0.58));
       const hDist = Math.cos(pitch) * dist;
@@ -1959,12 +1959,13 @@ export class DriveScene {
       this.sun.intensity = LIGHT_POWER * T.sunIntensity * (1 - S.cloudShade * 0.35);
       this.sun.position.copy(this.seasons.lightDir).multiplyScalar(22).add(new THREE.Vector3(v.x, 0, v.z));
       this.sun.target.position.set(v.x, 0, v.z);
+      this.sun.target.updateMatrixWorld();
 
       this.hemiLight.color.copy(T.hemiSky);
       this.hemiLight.groundColor.copy(T.hemiGround);
       this.hemiLight.intensity = T.hemiIntensity * (1 + S.snowCoverage * 0.2);
 
-      const FOG_BASE_DENSITY = 0.0055;
+      const FOG_BASE_DENSITY = 0.017;
       if (this.scene.fog) {
         this.scene.fog.color.setRGB(T.fog.r * S.fogTint.x, T.fog.g * S.fogTint.y, T.fog.b * S.fogTint.z);
         this.scene.fog.density = S.fogDensity * (FOG_BASE_DENSITY / 0.017);
@@ -2035,11 +2036,13 @@ export class DriveScene {
       if (this.headlights) this.headlights.visible = true;
     } else {
       if (this.seasons) {
-        this.seasons.setTime(1);
         U.uWetness.value = this.seasons.season.wetness || 0.05;
       }
       if (this.rainGroup) this.rainGroup.visible = false;
-      if (this.headlights) this.headlights.visible = false;
+      if (this.headlights) {
+        const T = this.seasons?.time;
+        this.headlights.visible = T ? (T.night > 0.1 || T.evening > 0.5) : false;
+      }
     }
   }
   addGameAgentMesh(agent) {

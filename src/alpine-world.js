@@ -36,7 +36,7 @@ function createSafeCanvas(w = 256, h = 256) {
         const WORLD_SIZE = 15;
         const HALF_WORLD = WORLD_SIZE / 2;
         const BASE_HEIGHT = 0.1;
-        const ROAD_WIDTH = 1.4;
+        const ROAD_WIDTH = 2.8;
         const ROAD_DIR_X = 0.707106;
         const ROAD_DIR_Z = 0.707106;
         const BRIDGE_X = -0.72, BRIDGE_Z = -0.72;
@@ -206,8 +206,8 @@ function createSafeCanvas(w = 256, h = 256) {
 
             if (streamDist < 0.62) {
                 const channel = 1 - smoothstep(streamDist, 0.08, 0.62);
-                const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, 1.08);
-                const nearBridge = 1 - smoothstep(latDist, 1.18, 1.62);
+                const outsideDeck = smoothstep(latDist, ROAD_WIDTH / 2 - 0.04, ROAD_WIDTH / 2 + 0.55);
+                const nearBridge = 1 - smoothstep(latDist, ROAD_WIDTH / 2 + 0.3, ROAD_WIDTH / 2 + 1.15);
                 h -= channel * outsideDeck * nearBridge * 0.42;
             }
 
@@ -1017,41 +1017,44 @@ function createSafeCanvas(w = 256, h = 256) {
                 const edgeLineMat = new THREE.MeshBasicMaterial({ color: 0xe8ece8 });
 
                 const b = new StaticBatch();
-                b.box(asphaltMat, 1.62, 0.12, 2.46, 0, 0, 0);
-                [-0.76, 0, 0.76].forEach(z => b.box(lineMat, 0.035, 0.008, 0.42, 0, 0.064, z));
-                [-0.62, 0.62].forEach(x => b.box(edgeLineMat, 0.026, 0.007, 2.38, x, 0.064, 0));
+                b.box(asphaltMat, 2.92, 0.12, 2.46, 0, 0, 0);
+                [-0.045, 0.045].forEach(x => b.box(lineMat, 0.032, 0.008, 2.46, x, 0.064, 0));
+                [-0.73, 0.73].forEach(divOff => {
+                    [-0.76, 0, 0.76].forEach(z => b.box(edgeLineMat, 0.03, 0.008, 0.42, divOff, 0.064, z));
+                });
+                [-1.38, 1.38].forEach(x => b.box(edgeLineMat, 0.032, 0.007, 2.38, x, 0.064, 0));
 
                 const arch = new THREE.Shape();
-                arch.moveTo(-1.18, -0.72); arch.lineTo(1.18, -0.72); arch.lineTo(1.18, 0.06); arch.lineTo(-1.18, 0.06); arch.closePath();
+                arch.moveTo(-1.85, -0.72); arch.lineTo(1.85, -0.72); arch.lineTo(1.85, 0.06); arch.lineTo(-1.85, 0.06); arch.closePath();
                 const hole = new THREE.Path();
-                hole.moveTo(-0.62, -0.72); hole.lineTo(-0.62, -0.57);
-                hole.absarc(0, -0.57, 0.62, Math.PI, 0, true);
-                hole.lineTo(0.62, -0.72); hole.closePath();
+                hole.moveTo(-0.95, -0.72); hole.lineTo(-0.95, -0.57);
+                hole.absarc(0, -0.57, 0.95, Math.PI, 0, true);
+                hole.lineTo(0.95, -0.72); hole.closePath();
                 arch.holes.push(hole);
                 const archGeo = new THREE.ExtrudeGeometry(arch, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.025, bevelSize: 0.025, bevelSegments: 2, curveSegments: 24 });
                 [-1, 1].forEach(side => {
-                    b.add(archGeo, stoneMat, side * 0.83, 0, 0, 0, -side * Math.PI / 2, 0);
-                    b.add(new THREE.TorusGeometry(0.625, 0.045, 6, 28, Math.PI), stoneEdgeMat, side * 0.895, -0.57, 0, 0, side * Math.PI / 2, 0);
+                    b.add(archGeo, stoneMat, side * 1.48, 0, 0, 0, -side * Math.PI / 2, 0);
+                    b.add(new THREE.TorusGeometry(0.955, 0.045, 6, 28, Math.PI), stoneEdgeMat, side * 1.54, -0.57, 0, 0, side * Math.PI / 2, 0);
                 });
-                b.box(tunnelMat, 1.82, 0.035, 1.38, 0, -0.29, 0);
-                [-0.71, 0.71].forEach(z => b.box(tunnelMat, 1.72, 0.54, 0.045, 0, -0.21, z));
+                b.box(tunnelMat, 3.08, 0.035, 1.38, 0, -0.29, 0);
+                [-0.71, 0.71].forEach(z => b.box(tunnelMat, 2.98, 0.54, 0.045, 0, -0.21, z));
 
                 [-1, 1].forEach(side => {
-                    b.box(stoneEdgeMat, 0.12, 0.13, 2.54, side * 0.82, 0.075, 0);
-                    [0.31, 0.5].forEach(y => b.box(metalMat, 0.045, 0.045, 2.5, side * 0.82, y, 0));
-                    for (let z = -1.1; z <= 1.1001; z += 0.44) b.box(metalMat, 0.052, 0.46, 0.052, side * 0.82, 0.29, z);
-                    b.add(new THREE.CylinderGeometry(0.032, 0.045, 0.72, 8), metalMat, side * 0.92, 0.46, side * 0.88);
-                    b.add(new THREE.IcosahedronGeometry(0.1, 1), lampMat, side * 0.92, 0.84, side * 0.88);
+                    b.box(stoneEdgeMat, 0.12, 0.13, 2.54, side * 1.48, 0.075, 0);
+                    [0.31, 0.5].forEach(y => b.box(metalMat, 0.045, 0.045, 2.5, side * 1.48, y, 0));
+                    for (let z = -1.1; z <= 1.1001; z += 0.44) b.box(metalMat, 0.052, 0.46, 0.052, side * 1.48, 0.29, z);
+                    b.add(new THREE.CylinderGeometry(0.032, 0.045, 0.72, 8), metalMat, side * 1.58, 0.46, side * 0.88);
+                    b.add(new THREE.IcosahedronGeometry(0.1, 1), lampMat, side * 1.58, 0.84, side * 0.88);
 
                     // Snow slabs on the curb and top rail
                     const curbSnow = new THREE.Mesh(snowSlab(0.13, 0.05, 2.5), snowSlabMaterial);
-                    curbSnow.position.set(side * 0.82, 0.14, 0);
+                    curbSnow.position.set(side * 1.48, 0.14, 0);
                     const railSnow = new THREE.Mesh(snowSlab(0.06, 0.035, 2.46), snowSlabMaterial);
-                    railSnow.position.set(side * 0.82, 0.522, 0);
+                    railSnow.position.set(side * 1.48, 0.522, 0);
                     bridge.add(curbSnow, railSnow);
 
                     const light = new THREE.PointLight(0xff9a3c, 0.6, 3.4, 1.8);
-                    light.position.set(side * 0.92, 0.84, side * 0.88);
+                    light.position.set(side * 1.58, 0.84, side * 0.88);
                     bridge.add(light);
                     (this.lights ??= []).push(light);
                 });
@@ -1787,14 +1790,14 @@ function createSafeCanvas(w = 256, h = 256) {
                     group.position.set(centerAlong * ROAD_DIR_X, 0, centerAlong * ROAD_DIR_Z);
                     group.rotation.y = Math.PI / 4;
                     const b = new StaticBatch();
-                    b.box(guardMat, 0.055, 0.08, 2.5, side * 0.9, 0.39, 0);
+                    b.box(guardMat, 0.055, 0.08, 2.5, side * 1.55, 0.39, 0);
                     for (let z = -1.05; z <= 1.06; z += 0.7) {
-                        b.box(guardMat, 0.055, 0.38, 0.055, side * 0.9, 0.2, z);
-                        b.box(reflectorMat, 0.07, 0.055, 0.025, side * 0.86, 0.42, z);
+                        b.box(guardMat, 0.055, 0.38, 0.055, side * 1.55, 0.2, z);
+                        b.box(reflectorMat, 0.07, 0.055, 0.025, side * 1.51, 0.42, z);
                     }
                     b.build(group);
                     const snow = new THREE.Mesh(snowSlab(0.07, 0.035, 2.48), snowSlabMaterial);
-                    snow.position.set(side * 0.9, 0.43, 0);
+                    snow.position.set(side * 1.55, 0.43, 0);
                     group.add(snow);
                     scene.add(group);
                 });
@@ -1811,7 +1814,7 @@ function createSafeCanvas(w = 256, h = 256) {
             const tex = new THREE.CanvasTexture(canvas);
             tex.colorSpace = THREE.SRGBColorSpace;
             const sign = new THREE.Group();
-            const along = -2.2, side = -2.1;
+            const along = -2.2, side = -2.35;
             sign.position.set(along * ROAD_DIR_X + side * -ROAD_DIR_Z, 0.08, along * ROAD_DIR_Z + side * ROAD_DIR_X);
             sign.rotation.y = 5 * Math.PI / 4;
             const b = new StaticBatch();
@@ -3060,7 +3063,7 @@ class AlpineChunk {
 
             const totalLen = dist(a, b);
             if (totalLen < 0.05) continue;
-            const width = e.width || 1.4;
+            const width = e.width || 2.8;
 
             // Smooth width taper: if adjacent edge is narrower, flair smoothly over transition zone
             let wA = width;
@@ -3068,12 +3071,12 @@ class AlpineChunk {
             if (this.world && this.world.edges) {
                 const adjA = this.world.edges.filter(ed => ed !== e && (ed.a === a.id || ed.b === a.id));
                 if (adjA.length === 1) {
-                    const minAdjA = adjA[0].width || 1.4;
+                    const minAdjA = adjA[0].width || 2.8;
                     if (minAdjA < width) wA = minAdjA;
                 }
                 const adjB = this.world.edges.filter(ed => ed !== e && (ed.a === b.id || ed.b === b.id));
                 if (adjB.length === 1) {
-                    const minAdjB = adjB[0].width || 1.4;
+                    const minAdjB = adjB[0].width || 2.8;
                     if (minAdjB < width) wB = minAdjB;
                 }
             }
@@ -3218,6 +3221,16 @@ class AlpineChunk {
                                 pushQuad(whitePos, whiteNorm, WLA, WRA, WLB, WRB);
                             });
                         }
+
+                        // Outer solid white edge boundary lines
+                        [-segHalfW0 + 0.08, segHalfW0 - 0.08].forEach(eOff0 => {
+                            const eOff1 = Math.sign(eOff0) * (segHalfW1 - 0.08);
+                            const ELA = { x: p0x - nx0 * (eOff0 + 0.016), y: yCA + 0.005, z: p0z - nz0 * (eOff0 + 0.016) };
+                            const ERA = { x: p0x - nx0 * (eOff0 - 0.016), y: yCA + 0.005, z: p0z - nz0 * (eOff0 - 0.016) };
+                            const ELB = { x: p1x - nx1 * (eOff1 + 0.016), y: yCB + 0.005, z: p1z - nz1 * (eOff1 + 0.016) };
+                            const ERB = { x: p1x - nx1 * (eOff1 - 0.016), y: yCB + 0.005, z: p1z - nz1 * (eOff1 - 0.016) };
+                            pushQuad(whitePos, whiteNorm, ELA, ERA, ELB, ERB);
+                        });
                     } else if (segWAvg >= 1.9) {
                         // 3-Lane Mountain Pass (Climbing / Passing Section):
                         // Solid yellow center divider + white dashed overtaking lane line

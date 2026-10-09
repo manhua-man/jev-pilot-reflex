@@ -158,7 +158,7 @@ const keys = new Set(),
   };
 $("app").innerHTML = `
 <main class="drive-area" aria-label="3D driving simulator"><canvas id="world-canvas" aria-label="Interactive three-dimensional driving world"></canvas><div id="vector-labels" aria-label="Jev motion vector probabilities"></div></main>
-<header class="topbar glass"><a href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" class="brand" aria-label="Jev Pilot Reflex"><img class="brand-mark" src="${import.meta.env.BASE_URL || "./"}brand/standard-agents-mark.svg" alt=""/><b>Jev Pilot Reflex</b></a><div class="world-picker"><div class="model-mode-selector" title="智驾具身范式演进：VLA / WA / WLA + Jev"><button id="mode-vla" class="mode-btn active" data-mode="vla" title="VLA + Jev: 视觉-语言-动作协同 + 物理安全盾">🟣 VLA+Jev</button><button id="mode-wa" class="mode-btn" data-mode="wa" title="WA + Jev: 生成式时空世界模型推演 + 物理安全盾">🌐 WA+Jev</button><button id="mode-wla" class="mode-btn" data-mode="wla" title="WLA + Jev: 世界模型-语言意图-动作全闭环 + 物理安全盾">⚡ WLA+Jev</button></div><div class="seasons-dock-picker" title="Four Seasons · 四季时空 (快捷键 1/2/3/4)"><button id="season-spring" class="season-btn" data-season="0" title="春和景明 (Spring) · 樱花落瓣 · 快捷键 1">🌸 春</button><button id="season-summer" class="season-btn active" data-season="1" title="夏木葱茏 (Summer) · 金色花粉与萤火 · 快捷键 2">☀️ 夏</button><button id="season-autumn" class="season-btn" data-season="2" title="霜染红枫 (Autumn) · 枫叶漫卷 · 快捷键 3">🍁 秋</button><button id="season-winter" class="season-btn" data-season="3" title="银装素裹 (Winter) · 晴雪反光 · 快捷键 4">❄️ 冬</button></div><div class="times-dock-picker" title="Time of Day · 昼夜流转 (快捷键 7/8/9)"><button id="time-sunset" class="time-btn" data-time="0" title="落日余晖 (Sunset) · 暮色长影 · 快捷键 7">🌅 暮色</button><button id="time-noon" class="time-btn active" data-time="1" title="高天丽日 (Noon) · 正午通透 · 快捷键 8">☀️ 正午</button><button id="time-night" class="time-btn" data-time="2" title="静谧星月 (Night) · 银河月晕 · 快捷键 9">🌙 星夜</button></div><div class="weather-picker" title="气象模式切换 (联动地面物理附着力与视距)"><button id="weather-clear" class="weather-btn active" title="晴天模式 · 干燥路面 (μ=0.90)">☀️ 晴天</button><button id="weather-rain" class="weather-btn" title="暴雨模式 · 湿滑路面 (μ=0.52)">🌧️ 暴雨</button><button id="weather-night" class="weather-btn" title="暗夜雨雾 · 视距极限探路">🌙 暗夜</button></div><select id="world-select" aria-label="World environment"><option value="alpine">🏔️ Alpine Passage (四季山口 · 自然美景)</option><option value="city">🏙️ Skyline City (城市天际线 · 现代都市)</option><option value="town">🏡 Small town (风情小镇 · 林荫道)</option><option value="highway">🛣️ Interstate 08 (高速公路 · 开阔畅行)</option></select><a href="./four-seasons.html" target="_blank" class="alpine-btn" title="在新标签页全屏畅玩 100% 原生 iamtechartist/Four-Seasons 阿尔卑斯微缩世界">🏔️ 原生 Alpine 沙盘 ↗</a><button id="new-world" title="Refresh world" aria-label="Refresh world">${icon("rotate-cw")}</button><a id="github-link" href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" aria-label="View Jev Pilot Reflex on GitHub (opens in a new tab)" title="View on GitHub">${icon("github")}</a></div></header>
+<header class="topbar glass"><a href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" class="brand" aria-label="Jev Pilot Reflex"><img class="brand-mark" src="${import.meta.env.BASE_URL || "./"}brand/standard-agents-mark.svg" alt=""/><b>Jev Pilot Reflex</b></a><div class="world-picker"><div class="model-mode-selector" title="智驾具身范式演进：VLA / WA / WLA + Jev"><button id="mode-vla" class="mode-btn active" data-mode="vla" title="VLA + Jev: 视觉-语言-动作协同 + 物理安全盾">🟣 VLA+Jev</button><button id="mode-wa" class="mode-btn" data-mode="wa" title="WA + Jev: 生成式时空世界模型推演 + 物理安全盾">🌐 WA+Jev</button><button id="mode-wla" class="mode-btn" data-mode="wla" title="WLA + Jev: 世界模型-语言意图-动作全闭环 + 物理安全盾">⚡ WLA+Jev</button></div><div class="seasons-dock-picker" title="Four Seasons · 四季时空 (快捷键 1/2/3/4)"><button id="season-spring" class="season-btn" data-season="0" title="春和景明 (Spring) · 樱花落瓣 · 快捷键 1">🌸 春</button><button id="season-summer" class="season-btn active" data-season="1" title="夏木葱茏 (Summer) · 金色花粉与萤火 · 快捷键 2">☀️ 夏</button><button id="season-autumn" class="season-btn" data-season="2" title="霜染红枫 (Autumn) · 枫叶漫卷 · 快捷键 3">🍁 秋</button><button id="season-winter" class="season-btn" data-season="3" title="银装素裹 (Winter) · 晴雪反光 · 快捷键 4">❄️ 冬</button></div><div class="times-dock-picker" title="Time of Day · 昼夜流转 (快捷键 7/8/9)"><button id="time-sunset" class="time-btn active" data-time="0" title="落日余晖 (Sunset) · 暖金长影 · 快捷键 7">🌅 暮色</button><button id="time-noon" class="time-btn" data-time="1" title="高天丽日 (Noon) · 正午通透 · 快捷键 8">☀️ 正午</button><button id="time-night" class="time-btn" data-time="2" title="静谧星月 (Night) · 银河月晕 · 快捷键 9">🌙 星夜</button></div><div class="weather-picker" title="气象模式切换 (联动地面物理附着力与视距)"><button id="weather-clear" class="weather-btn active" title="晴天模式 · 干燥路面 (μ=0.90)">☀️ 晴天</button><button id="weather-rain" class="weather-btn" title="暴雨模式 · 湿滑路面 (μ=0.52)">🌧️ 暴雨</button><button id="weather-night" class="weather-btn" title="暗夜雨雾 · 视距极限探路">🌙 暗夜</button></div><select id="world-select" aria-label="World environment"><option value="alpine">🏔️ Alpine Passage (四季山口 · 自然美景)</option><option value="city">🏙️ Skyline City (城市天际线 · 现代都市)</option><option value="town">🏡 Small town (风情小镇 · 林荫道)</option><option value="highway">🛣️ Interstate 08 (高速公路 · 开阔畅行)</option></select><a href="./four-seasons.html" target="_blank" class="alpine-btn" title="在新标签页全屏畅玩 100% 原生 iamtechartist/Four-Seasons 阿尔卑斯微缩世界">🏔️ 原生 Alpine 沙盘 ↗</a><button id="new-world" title="Refresh world" aria-label="Refresh world">${icon("rotate-cw")}</button><a id="github-link" href="https://github.com/manhua-man/jev-pilot-reflex" target="_blank" rel="noopener noreferrer" aria-label="View Jev Pilot Reflex on GitHub (opens in a new tab)" title="View on GitHub">${icon("github")}</a></div></header>
 <div class="navigation-hud"><div class="navigation-card glass"><span id="turn-icon">${icon("arrow-up")}</span><div><strong id="next-maneuver">Continue straight</strong><span id="turn-distance"></span></div><span class="nav-divider"></span><span id="remaining"></span><button id="map-toggle" aria-label="Toggle route map" aria-pressed="true" title="Hide route map">${icon("map")}</button></div><div class="fork-nav-selector glass" id="fork-nav-selector"><span class="fork-title">高速分岔导航预选</span><div class="fork-btn-group"><button id="fork-choose-left" class="fork-btn active" title="预选 ↖ 机场快速路 (科技城)"><span class="fork-arrow">↖</span> 机场快速路</button><button id="fork-choose-right" class="fork-btn" title="预选 ↗ 中心商务区 (金融街)"><span class="fork-arrow">↗</span> 金融街 CBD</button></div></div>
 <div id="minimap" class="minimap glass"><div class="minimap-toolbar" role="toolbar" aria-label="Minimap controls"><button id="map-drag" aria-label="Move minimap" title="Move minimap · drag or use arrow keys">${icon("grip")}</button><div><button id="map-zoom-out" aria-label="Zoom out" title="Zoom out">${icon("minus")}</button><button id="map-zoom-in" aria-label="Zoom in" title="Zoom in">${icon("plus")}</button><button id="map-reset" aria-label="Reset minimap" title="Reset map position, zoom and following">${icon("rotate-ccw")}</button></div></div><canvas id="map-canvas" width="380" height="310" aria-label="Route map. Drag to pan, scroll to zoom, double-click to follow the car."></canvas></div></div>
 <div id="paused-overlay" hidden><div class="glass"><span>${icon("pause")} Paused</span><button id="resume" class="primary">Resume driving</button></div></div>
@@ -597,7 +597,7 @@ $("close-dual-brain")?.addEventListener("click", () => {
     $("vla-toggle")?.classList.remove("active");
   }
 });
-function setSeasonIndex(index) {
+function setSeasonIndex(index, silent = false) {
   scene.setSeason(index);
   const keys = ["spring", "summer", "autumn", "winter"];
   sim.season = keys[index];
@@ -610,10 +610,10 @@ function setSeasonIndex(index) {
     "🍁 霜染红枫 (Autumn) · 枫叶漫卷",
     "❄️ 银装素裹 (Winter) · 晴雪反光与湿滑冰面",
   ];
-  toast(`时空转换: ${names[index]}`);
+  if (!silent) toast(`时空转换: ${names[index]}`);
 }
 
-function setTimeIndex(index) {
+function setTimeIndex(index, silent = false) {
   scene.setTimeOfDay(index);
   const keys = ["sunset", "noon", "night"];
   sim.timeOfDay = keys[index];
@@ -634,7 +634,7 @@ function setTimeIndex(index) {
     "☀️ 高天丽日 (Noon) · 晴空万里",
     "🌙 静谧星夜 (Night) · 银河漫天与车灯探路",
   ];
-  toast(`光影流转: ${times[index]}`);
+  if (!silent) toast(`光影流转: ${times[index]}`);
 }
 
 ["spring", "summer", "autumn", "winter"].forEach((k, i) => {
@@ -651,17 +651,7 @@ function setWeatherMode(mode) {
   $("weather-rain")?.classList.toggle("active", mode === "rain");
   $("weather-night")?.classList.toggle("active", mode === "night");
   if (mode === "night") {
-    ["sunset", "noon", "night"].forEach((k, i) =>
-      $(`time-${k}`)?.classList.toggle("active", i === 2),
-    );
-  } else if (mode === "clear") {
-    ["sunset", "noon", "night"].forEach((k, i) =>
-      $(`time-${k}`)?.classList.toggle("active", i === 1),
-    );
-  } else if (mode === "rain") {
-    ["sunset", "noon", "night"].forEach((k, i) =>
-      $(`time-${k}`)?.classList.toggle("active", i === 0),
-    );
+    setTimeIndex(2);
   }
 }
 
@@ -1836,6 +1826,8 @@ function animate(now) {
     updateUI();
   }
 }
+setSeasonIndex(1, true);
+setTimeIndex(0, true);
 refreshWorld();
 syncPilot();
 updateUI();
