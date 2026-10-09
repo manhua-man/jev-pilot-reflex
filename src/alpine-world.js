@@ -2768,8 +2768,8 @@ class AlpineChunk {
                 const slope = Math.hypot(gx, gz);
                 const n = valueNoise(x * 0.6, z * 0.6), n2 = valueNoise(x * 2.3, z * 2.3);
 
-                const rock = Math.max(smoothstep(h, 1.6, 2.7), smoothstep(slope, 0.9, 1.6));
-                const scree = (1 - rock) * smoothstep(h, 0.7, 1.4);
+                const rock = Math.max(smoothstep(h, 2.6, 4.2), smoothstep(slope, 1.15, 1.85));
+                const scree = (1 - rock) * smoothstep(slope, 0.85, 1.3) * 0.35;
 
                 let isNearRoad = false;
                 if (this.world && this.world.edges && this.world.byId) {
@@ -2824,7 +2824,7 @@ class AlpineChunk {
         const baseGeo = getSharedGrassGeometry();
         const geo = baseGeo.clone();
         const mat = getSharedGrassMaterial();
-        const count = 5500;
+        const count = 9500;
         const mesh = new THREE.InstancedMesh(geo, mat, count);
         const attr = new Float32Array(count * 4);
         const CHUNK_SIZE = 15.0;
@@ -2855,7 +2855,7 @@ class AlpineChunk {
             if (nearRoad) continue;
             _obj.position.set(rx, h - 0.02, rz);
             _obj.rotation.set((rand() - 0.5) * 0.14, rand() * Math.PI * 2, (rand() - 0.5) * 0.14);
-            _obj.scale.setScalar(0.34 + rand() * 0.46);
+            _obj.scale.setScalar(0.38 + rand() * 0.5);
             _obj.updateMatrix();
             mesh.setMatrixAt(placed, _obj.matrix);
             const r = rand();
@@ -2886,8 +2886,8 @@ class AlpineChunk {
         const birchTrunk = patchMaterial(stdMat(0xd8d4cd, 0.85), { key: 'birch-trunk', worldNormal: true, fragmentColor: snowDustCode('0.8') });
         const birchLeaves = patchMaterial(stdMat(0x6b8e23, 0.85), { key: 'birch-leaves', worldNormal: true, fragmentColor: snowDustCode('0.85') });
 
-        // Natural Alpine Trees (58 trees per chunk with dense pine groves & birches)
-        const treeCount = 58;
+        // Natural Alpine Trees (~20 trees per chunk, open meadows matching Four-Seasons)
+        const treeCount = 20;
         for (let k = 0; k < treeCount; k++) {
             const rx = ox + 1.0 + (hash(this.cx * 73 + k * 17, this.cz * 41 + k * 11) % 1) * (CHUNK_SIZE - 2.0);
             const rz = oz + 1.0 + (hash(this.cz * 59 + k * 23, this.cx * 31 + k * 13) % 1) * (CHUNK_SIZE - 2.0);
@@ -2903,7 +2903,7 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    const treeMargin = (e.width || 2.8) / 2 + 1.25;
+                    const treeMargin = (e.width || 2.8) / 2 + 1.85;
                     if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < treeMargin) {
                         nearRoad = true;
                         break;

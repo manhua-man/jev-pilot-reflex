@@ -1933,10 +1933,10 @@ export class DriveScene {
       // Uses stable oblique vantage (~67 deg) + user orbit drag,
       // perfectly balancing hero car, winding road, towering summits, and golden sunset sky
       const orbitYaw = Math.PI / 4 + 0.38 + (view.yaw || 0);
-      const pitch = Math.max(0.24, Math.min(0.85, (view.pitch ?? 0.34) - 0.05));
-      const dist = Math.max(9.5, Math.min(26.0, (view.distance || 12) * 1.18));
+      const pitch = Math.max(0.32, Math.min(0.85, (view.pitch ?? 0.42)));
+      const dist = Math.max(12.0, Math.min(32.0, (view.distance || 14) * 1.25));
       const hDist = Math.cos(pitch) * dist;
-      const vHeight = Math.sin(pitch) * dist + 1.8;
+      const vHeight = Math.sin(pitch) * dist + 2.8;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
         v.x - Math.sin(orbitYaw) * hDist,
@@ -1945,13 +1945,13 @@ export class DriveScene {
       );
       // Guarantee camera remains nicely above mountain slope terrain
       const terrH = getContinuousAlpineHeight(pos.x, pos.z, this.sim.world);
-      if (pos.y < terrH + 2.0) {
-        pos.y = terrH + 2.0;
+      if (pos.y < terrH + 2.5) {
+        pos.y = terrH + 2.5;
       }
-      const ahead = 1.0;
+      const ahead = 3.5;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
-        py + 0.75,
+        py + 1.2,
         v.z - Math.cos(v.heading) * ahead,
       );
     } else {
