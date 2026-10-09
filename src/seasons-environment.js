@@ -574,9 +574,9 @@ export class ProceduralSky {
 
     // Sun body (HDR bloom)
     this.sun = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(7.5, 3),
+      new THREE.IcosahedronGeometry(3.2, 3),
       new THREE.MeshBasicMaterial({
-        color: new THREE.Color(2.4, 2.1, 1.7),
+        color: new THREE.Color(2.6, 2.3, 1.8),
         toneMapped: false,
         transparent: true,
         fog: false,
@@ -611,6 +611,52 @@ export class ProceduralSky {
 
     this.stars = this.createStars();
     scene.add(this.stars);
+
+    this.createClouds();
+  }
+
+  createClouds() {
+    this.cloudMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      flatShading: true,
+      transparent: true,
+      opacity: 0.92,
+      fog: false,
+    });
+    this.cloudGroup = new THREE.Group();
+    const presets = [
+      { x: 18, y: 15, z: -19, s: 4.8 },
+      { x: 26, y: 18, z: -27, s: 5.4 },
+      { x: 20, y: 16, z: -13, s: 4.2 },
+      { x: 30, y: 17, z: -21, s: 4.6 },
+      { x: -15, y: 17, z: -24, s: 4.5 },
+    ];
+    this.cloudMeshes = presets.map((d, idx) => {
+      const puffGroup = new THREE.Group();
+      const n = 6;
+      for (let j = 0; j < n; j++) {
+        const r = 1.1 + ((j * 3) % 4) * 0.28;
+        const g = new THREE.DodecahedronGeometry(r, 1);
+        g.scale(1, 0.65, 1);
+        const mesh = new THREE.Mesh(g, this.cloudMaterial);
+        mesh.position.set((j - n / 2) * 1.35 + ((j * 5) % 3 - 1) * 0.35, ((j * 7) % 3 - 1) * 0.3, ((j * 11) % 3 - 1) * 0.5);
+        puffGroup.add(mesh);
+      }
+      puffGroup.scale.setScalar(d.s * 0.24);
+      puffGroup.position.set(d.x, d.y, d.z);
+      puffGroup.userData = {
+        angle: idx * 1.25,
+        radius: 3.5 + (idx % 3) * 2.5,
+        speed: 0.02 + (idx % 4) * 0.015,
+        baseY: d.y,
+        cx: d.x,
+        cz: d.z,
+      };
+      this.cloudGroup.add(puffGroup);
+      return puffGroup;
+    });
+    this.scene.add(this.cloudGroup);
   }
 
   createStars() {
@@ -679,7 +725,7 @@ export class ProceduralSky {
     }
 
     // Update Sun / Moon celestial positions
-    const sunDist = 720;
+    const sunDist = 68;
     const sPos = new THREE.Vector3()
       .copy(controller.lightDir)
       .multiplyScalar(sunDist)
@@ -700,7 +746,7 @@ export class ProceduralSky {
       this.glow.position.copy(sPos);
       this.glow.material.color.set(T.glow);
       this.glow.material.opacity = 0.75 * T.sunBody;
-      const sc = 70 * T.glowScale;
+      const sc = 32 * T.glowScale;
       this.glow.scale.set(sc, sc, 1);
       this.glow.visible = true;
     } else if (T.moonBody > 0.05) {
@@ -716,6 +762,28 @@ export class ProceduralSky {
 
     this.glowColor.set(T.glow).multiplyScalar(0.75);
     this.starUniforms.uStars.value = T.stars;
+
+    // Drifting low-poly clouds
+    if (this.cloudGroup && cameraPos) {
+      this.cloudGroup.position.copy(cameraPos);
+    }
+    if (this.cloudMeshes) {
+      const cloudColor = new THREE.Color(1, 1, 1);
+      cloudColor.lerp(new THREE.Color(0.62, 0.66, 0.72), (S?.cloudShade || 0) * 1.4);
+      cloudColor.lerp(new THREE.Color(0.1, 0.12, 0.22), (T?.night || 0) * 0.85);
+      cloudColor.lerp(new THREE.Color(1.0, 0.78, 0.66), (1 - (T?.night || 0)) * (T?.evening || 0) * 0.45);
+      this.cloudMaterial.color.copy(cloudColor);
+      const dt = 0.016;
+      for (const c of this.cloudMeshes) {
+        const u = c.userData;
+        u.angle += u.speed * dt;
+        c.position.set(
+          u.cx + Math.cos(u.angle) * u.radius,
+          u.baseY + Math.sin(u.angle * 2) * 0.35,
+          u.cz + Math.sin(u.angle) * u.radius,
+        );
+      }
+    }
   }
 }
 

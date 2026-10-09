@@ -2421,6 +2421,8 @@ function getSharedRoadMaterials() {
                 worldNormal: true,
                 fragmentColor: /* glsl */`
                     vec2 snWpXz = vWPos.xz;
+                    float grain = (sn_noise(snWpXz * 18.0) * 0.6 + sn_noise(snWpXz * 46.0) * 0.4 - 0.5) * 0.08;
+                    diffuseColor.rgb += vec3(grain);
                     float sdN = sn_noise(snWpXz * 3.1) * 0.6 + sn_noise(snWpXz * 9.0) * 0.4;
                     float sd = uSnowCoverage * 0.85 * smoothstep(0.38, 0.78, vWNrm.y + (sdN - 0.5) * 0.5);
                     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.9, 0.96), sd);
@@ -2719,7 +2721,7 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    const roadMargin = (e.width || 1.4) / 2 + 0.38;
+                    const roadMargin = (e.width || 2.8) / 2 + 0.55;
                     if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < roadMargin) {
                         nearRoad = true;
                         break;
@@ -2777,7 +2779,7 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((rx - a.x) * dx + (rz - a.z) * dz) / l2, 0, 1);
-                    const treeMargin = (e.width || 1.4) / 2 + 1.25;
+                    const treeMargin = (e.width || 2.8) / 2 + 1.25;
                     if (Math.hypot(rx - (a.x + t * dx), rz - (a.z + t * dz)) < treeMargin) {
                         nearRoad = true;
                         break;
@@ -2824,7 +2826,7 @@ class AlpineChunk {
                     const l2 = dx * dx + dz * dz;
                     if (!l2) continue;
                     const t = clamp(((bx - a.x) * dx + (bz - a.z) * dz) / l2, 0, 1);
-                    const rockMargin = (e.width || 1.4) / 2 + bs + 0.35;
+                    const rockMargin = (e.width || 2.8) / 2 + bs + 0.35;
                     if (Math.hypot(bx - (a.x + t * dx), bz - (a.z + t * dz)) < rockMargin) {
                         nearRoad = true;
                         break;
@@ -3185,19 +3187,40 @@ class AlpineChunk {
                 pushQuad(asphaltPos, asphaltNorm, LA, CA, LB, CB);
                 pushQuad(asphaltPos, asphaltNorm, CA, RA, CB, RB);
 
-                // 2. Road side skirts (45cm downward edge so road never floats on steep slopes)
-                const LA_bot = { x: LA.x, y: yLA - 0.45, z: LA.z };
-                const LB_bot = { x: LB.x, y: yLB - 0.45, z: LB.z };
+                // 2. Road side skirts (5cm downward bevel so road anchors cleanly into terrain without jagged cliff walls)
+                const LA_bot = { x: LA.x, y: yLA - 0.05, z: LA.z };
+                const LB_bot = { x: LB.x, y: yLB - 0.05, z: LB.z };
                 pushQuad(asphaltPos, asphaltNorm, LB, LA, LB_bot, LA_bot);
 
-                const RA_bot = { x: RA.x, y: yRA - 0.45, z: RA.z };
-                const RB_bot = { x: RB.x, y: yRB - 0.45, z: RB.z };
+                const RA_bot = { x: RA.x, y: yRA - 0.05, z: RA.z };
+                const RB_bot = { x: RB.x, y: yRB - 0.05, z: RB.z };
                 pushQuad(asphaltPos, asphaltNorm, RA, RB, RA_bot, RB_bot);
 
                 // 3. Center markings & Multi-lane Dividers
                 const skipCenter = (isJctA && s0 < 1.4) || (isJctB && s1 > totalLen - 1.4);
                 if (!skipCenter) {
-                    if (segWAvg >= 2.5) {
+                    const isRoundabout = e.name && (e.name.includes("Roundabout") || e.name.includes("Ring") || e.name.includes("Rotary"));
+                    if (isRoundabout) {
+                        // One-way circulatory roundabout ring:
+                        // Dashed white circulatory lane divider, NO oncoming yellow lines!
+                        const dashStep = Math.floor(s0 / 0.8);
+                        if (dashStep % 2 === 0) {
+                            const WLA = { x: p0x - nx0 * 0.02, y: yCA + 0.005, z: p0z - nz0 * 0.02 };
+                            const WRA = { x: p0x + nx0 * 0.02, y: yCA + 0.005, z: p0z + nz0 * 0.02 };
+                            const WLB = { x: p1x - nx1 * 0.02, y: yCB + 0.005, z: p1z - nz1 * 0.02 };
+                            const WRB = { x: p1x + nx1 * 0.02, y: yCB + 0.005, z: p1z + nz1 * 0.02 };
+                            pushQuad(whitePos, whiteNorm, WLA, WRA, WLB, WRB);
+                        }
+                        // Outer and inner solid white boundary lines
+                        [-segHalfW0 + 0.08, segHalfW0 - 0.08].forEach(eOff0 => {
+                            const eOff1 = Math.sign(eOff0) * (segHalfW1 - 0.08);
+                            const ELA = { x: p0x - nx0 * (eOff0 + 0.016), y: yCA + 0.005, z: p0z - nz0 * (eOff0 + 0.016) };
+                            const ERA = { x: p0x - nx0 * (eOff0 - 0.016), y: yCA + 0.005, z: p0z - nz0 * (eOff0 - 0.016) };
+                            const ELB = { x: p1x - nx1 * (eOff1 + 0.016), y: yCB + 0.005, z: p1z - nz1 * (eOff1 + 0.016) };
+                            const ERB = { x: p1x - nx1 * (eOff1 - 0.016), y: yCB + 0.005, z: p1z - nz1 * (eOff1 - 0.016) };
+                            pushQuad(whitePos, whiteNorm, ELA, ERA, ELB, ERB);
+                        });
+                    } else if (segWAvg >= 2.5) {
                         // 4-Lane Alpine Parkway / Expressway:
                         // Dual solid yellow centerlines
                         [-0.045, 0.045].forEach(cyOff => {

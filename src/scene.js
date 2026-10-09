@@ -1455,6 +1455,10 @@ export class DriveScene {
         this.bloom?.resolution?.set(width, height);
       }
       this.camera.aspect = width / height;
+      const targetFov = this.sim.world.type === "alpine" ? 48 : 38;
+      if (Math.abs(this.camera.fov - targetFov) > 0.1) {
+        this.camera.fov = targetFov;
+      }
       this.camera.updateProjectionMatrix();
     }
     const v = this.sim.player;
@@ -1543,6 +1547,16 @@ export class DriveScene {
         m.rotation.y = -p.heading;
       }
     }
+
+    // Prune despawned traffic vehicles so inactive cars do not linger in scene
+    const activeTrafficIds = new Set(this.sim.traffic.map((p) => p.id));
+    for (const [id, m] of this.vehicles.entries()) {
+      if (!activeTrafficIds.has(id)) {
+        this.scene.remove(m);
+        this.vehicles.delete(id);
+      }
+    }
+
     const blinkOn = Math.floor(this.sim.time * 4) % 2 === 0;
     if (this.blinkerLeft) this.blinkerLeft.visible = this.sim.blinker === "left" && blinkOn;
     if (this.blinkerRight) this.blinkerRight.visible = this.sim.blinker === "right" && blinkOn;
@@ -1884,21 +1898,21 @@ export class DriveScene {
       const view = this.cameraInput.current();
       const orbitYaw = Math.PI / 4 + (view.yaw || 0);
       pos = new THREE.Vector3(
-        v.x - Math.sin(orbitYaw) * 14.5,
-        py + 13.0,
-        v.z - Math.cos(orbitYaw) * 14.5,
+        v.x - Math.sin(orbitYaw) * 22.0,
+        py + 18.0,
+        v.z - Math.cos(orbitYaw) * 22.0,
       );
-      look = new THREE.Vector3(v.x, py + 0.35, v.z);
+      look = new THREE.Vector3(v.x, py + 0.8, v.z);
     } else if (this.sim.world.type === "alpine") {
       const view = this.cameraInput.current();
-      // True Four-Seasons Diorama Tilt-Shift Follow Cam:
-      // Uses stable oblique isometric angle (~67 deg) + user orbit drag,
-      // keeping the miniature diorama in full panoramic view
+      // True Four-Seasons Panoramic Diorama Tilt-Shift Follow Cam:
+      // Uses stable oblique vantage (~67 deg) + user orbit drag,
+      // perfectly balancing hero car, winding road, towering summits, and golden sunset sky
       const orbitYaw = Math.PI / 4 + 0.38 + (view.yaw || 0);
-      const pitch = Math.max(0.48, Math.min(1.15, view.pitch + 0.12));
-      const dist = Math.max(5.2, Math.min(12.5, (view.distance || 12) * 0.58));
+      const pitch = Math.max(0.24, Math.min(0.85, (view.pitch ?? 0.34) - 0.05));
+      const dist = Math.max(9.5, Math.min(26.0, (view.distance || 12) * 1.18));
       const hDist = Math.cos(pitch) * dist;
-      const vHeight = Math.sin(pitch) * dist + 1.25;
+      const vHeight = Math.sin(pitch) * dist + 1.8;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
         v.x - Math.sin(orbitYaw) * hDist,
@@ -1907,13 +1921,13 @@ export class DriveScene {
       );
       // Guarantee camera remains nicely above mountain slope terrain
       const terrH = getContinuousAlpineHeight(pos.x, pos.z, this.sim.world);
-      if (pos.y < terrH + 1.5) {
-        pos.y = terrH + 1.5;
+      if (pos.y < terrH + 2.0) {
+        pos.y = terrH + 2.0;
       }
-      const ahead = 0.35;
+      const ahead = 1.0;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
-        py + 0.28,
+        py + 0.75,
         v.z - Math.cos(v.heading) * ahead,
       );
     } else {

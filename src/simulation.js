@@ -747,9 +747,11 @@ export class Simulation {
         v.speed = Math.max(0, lead.gap - (this.world.type === "alpine" ? 0.35 : 0.8)) / dt;
       v.s += v.speed * dt;
       if (v.s >= v.route.length - 1) {
-        // Interstate/Alpine vehicles continue beyond the view and recycle only after
-        // leaving the view. No visible route-end teleport.
-        if (dist(v, this.player) > (this.world.type === "alpine" ? 45 : 1300))
+        if (this.world.type === "alpine") {
+          this.spawnTraffic(Number(v.id.split("-")[1]), true);
+          continue;
+        }
+        if (dist(v, this.player) > 1300)
           this.spawnTraffic(Number(v.id.split("-")[1]), true);
         else {
           v.x += Math.sin(v.heading) * v.speed * dt;

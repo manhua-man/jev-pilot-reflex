@@ -853,48 +853,74 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     destinationId = nodeJoin.id;
 
   } else if (archetype === 3) {
-    // 3. Alpine Lookout Roundabout (山顶真实24边形高精度圆形环岛观景台, R=4.2m)
+    // 3. Alpine Lookout Roundabout (山顶真实24边形高精度圆形环岛观景台, R=5.5m)
     legName = `Bellevue Lookout Rotary · 第 ${legIdx} 环岛观景`;
     
-    // Approach straight (4-lane Parkway Approach)
-    const pEntry = move(fromNode, h0, 2.6);
-    const nodeEntry = addNode(`alp-rb-${legIdx}-entry`, pEntry.x, pEntry.z);
-    link(fromNode.id, nodeEntry.id, "Roundabout Parkway Approach", 2.8);
+    // Direction vectors
+    const fx = Math.sin(h0), fz = -Math.cos(h0);
+    const rx = Math.cos(h0), rz = Math.sin(h0);
+    const R = 5.5;
 
-    // Rotary center: R = 4.2m
-    const R = 4.2;
-    const center = move(nodeEntry, h0, 2.0 + R);
+    // Rotary Center placed along the road corridor
+    const center = {
+      x: fromNode.x + (6.0 + R) * fx,
+      z: fromNode.z + (6.0 + R) * fz,
+    };
 
-    // 24 perimeter nodes around circular rotary ring for smooth curve
+    // 24 perimeter nodes around circular rotary ring:
+    // angle phi from 0 to 2PI:
+    // phi = 0 (South): center - R * fwd
+    // phi = PI/2 (East): center + R * right (heading h0)
+    // phi = PI (North): center + R * fwd
+    // phi = 3PI/2 (West): center - R * right
     const SEGMENTS = 24;
     const rbNodes = [];
     for (let k = 0; k < SEGMENTS; k++) {
-      const theta = h0 + Math.PI + (k / SEGMENTS) * Math.PI * 2;
-      const p = {
-        x: center.x + Math.sin(theta) * R,
-        z: center.z - Math.cos(theta) * R,
-      };
-      const n = addNode(`alp-rb-${legIdx}-${k}`, p.x, p.z);
-      rbNodes.push(n);
+      const phi = (k / SEGMENTS) * Math.PI * 2;
+      const px = center.x - Math.cos(phi) * (R * fx) + Math.sin(phi) * (R * rx);
+      const pz = center.z - Math.cos(phi) * (R * fz) + Math.sin(phi) * (R * rz);
+      rbNodes.push(addNode(`alp-rb-${legIdx}-${k}`, px, pz));
     }
 
     // Link ring perimeter in one-way circle (4-lane 2.8m ring)
     for (let k = 0; k < SEGMENTS; k++) {
       link(rbNodes[k].id, rbNodes[(k + 1) % SEGMENTS].id, "Roundabout Multi Ring", 2.8);
     }
-    // Tangential approach connects to perimeter node 0
-    link(nodeEntry.id, rbNodes[0].id, "Roundabout Entry", 2.8);
 
-    // Exit node: tangent at halfway node (k = 12) points away from center (4-lane Parkway Exit)
-    const exitIdx = SEGMENTS / 2; // 12
-    const thetaExit = h0 + Math.PI + (exitIdx / SEGMENTS) * Math.PI * 2;
-    const exitHeading = thetaExit + Math.PI / 2;
-    const pExit = {
-      x: rbNodes[exitIdx].x + Math.sin(exitHeading) * 2.6,
-      z: rbNodes[exitIdx].z - Math.cos(exitHeading) * 2.6,
+    // Smooth Deflection Approach:
+    // Approach deflects gently to the right to meet ring at phi = PI/4 (k = 3):
+    // k = 3 is at 45 degrees, where ring heading is 45 degrees East of h0
+    const entryIdx = 3;
+    const pEntry1 = {
+      x: fromNode.x + 2.5 * fx + 0.5 * rx,
+      z: fromNode.z + 2.5 * fz + 0.5 * rz,
     };
-    const nodeExit = addNode(`alp-rb-${legIdx}-exit`, pExit.x, pExit.z);
-    link(rbNodes[exitIdx].id, nodeExit.id, "Roundabout Parkway Exit", 2.8);
+    const pEntry2 = {
+      x: fromNode.x + 5.2 * fx + 1.8 * rx,
+      z: fromNode.z + 5.2 * fz + 1.8 * rz,
+    };
+    const nodeEntry1 = addNode(`alp-rb-${legIdx}-entry1`, pEntry1.x, pEntry1.z);
+    const nodeEntry2 = addNode(`alp-rb-${legIdx}-entry2`, pEntry2.x, pEntry2.z);
+    link(fromNode.id, nodeEntry1.id, "Roundabout Parkway Approach", 2.8);
+    link(nodeEntry1.id, nodeEntry2.id, "Roundabout Parkway Approach", 2.8);
+    link(nodeEntry2.id, rbNodes[entryIdx].id, "Roundabout Entry", 2.8);
+
+    // Smooth Deflection Exit:
+    // Peels off ring at phi = 3PI/4 (k = 9):
+    // k = 9 is at 135 degrees, where ring heading is 45 degrees West of h0
+    const exitIdx = 9;
+    const pExit1 = {
+      x: center.x + 0.707 * R * fx + 1.8 * rx,
+      z: center.z + 0.707 * R * fz + 1.8 * rz,
+    };
+    const pExit2 = {
+      x: center.x + (R + 3.5) * fx,
+      z: center.z + (R + 3.5) * fz,
+    };
+    const nodeExit1 = addNode(`alp-rb-${legIdx}-exit1`, pExit1.x, pExit1.z);
+    const nodeExit2 = addNode(`alp-rb-${legIdx}-exit2`, pExit2.x, pExit2.z);
+    link(rbNodes[exitIdx].id, nodeExit1.id, "Roundabout Parkway Exit", 2.8);
+    link(nodeExit1.id, nodeExit2.id, "Roundabout Parkway Exit", 2.8);
 
     // Central alpine stone fountain & pines landmark
     world.objects.push({
@@ -904,14 +930,19 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
       z: center.z,
     });
 
-    // Follow entry -> half-circle (nodes 0 through 12) -> exit
-    const halfCircleIds = rbNodes.slice(0, exitIdx + 1).map(n => n.id);
+    // Follow entry1 -> entry2 -> ring (nodes 3 through 9) -> exit1 -> exit2
+    const ringTravelIds = [];
+    for (let k = entryIdx; k <= exitIdx; k++) {
+      ringTravelIds.push(rbNodes[k].id);
+    }
     pathIds.push(
-      nodeEntry.id,
-      ...halfCircleIds,
-      nodeExit.id
+      nodeEntry1.id,
+      nodeEntry2.id,
+      ...ringTravelIds,
+      nodeExit1.id,
+      nodeExit2.id
     );
-    destinationId = nodeExit.id;
+    destinationId = nodeExit2.id;
 
   } else if (archetype === 4) {
     // 4. Gorge Viaduct Bridge (峡谷4车道高架与石拱瀑布桥, 4段平滑延伸)
