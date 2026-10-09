@@ -2839,8 +2839,9 @@ class AlpineChunk {
                 const slope = Math.hypot(gx, gz);
                 const n = valueNoise(x * 0.6, z * 0.6), n2 = valueNoise(x * 2.3, z * 2.3);
 
-                const rock = Math.max(smoothstep(h, 2.6, 4.2), smoothstep(slope, 1.15, 1.85));
-                const scree = (1 - rock) * smoothstep(slope, 0.85, 1.3) * 0.35;
+                const rock = Math.max(smoothstep(h, 1.35, 2.25), smoothstep(slope, 0.95, 1.65));
+                const dPeak = Math.hypot(x - (this.cx * CHUNK_SIZE - 4.5), z - (this.cz * CHUNK_SIZE + 4.5));
+                const scree = (1 - smoothstep(dPeak, 4.8, 6.8)) * (1 - rock) * smoothstep(h, 0.45, 1.15) + (1 - rock) * smoothstep(slope, 0.72, 1.05) * 0.45;
 
                 let isNearRoad = false;
                 if (this.world && this.world.edges && this.world.byId) {
@@ -2906,7 +2907,17 @@ class AlpineChunk {
             const rx = ox + rand() * CHUNK_SIZE;
             const rz = oz + rand() * CHUNK_SIZE;
             const h = getContinuousAlpineHeight(rx, rz, this.world);
-            if (h > 4.2 || h < 0.05) continue;
+            // Do not grow grass on bare mountain peaks or water
+            if (h > 2.2 || h < 0.05) continue;
+            // Exclusion masks for buildings, props, and steep rocky cliffs
+            if (Math.hypot(rx - 4.5, rz - -4.5) < 1.7) continue; // Chalet yard
+            if (Math.hypot(rx - 2.0, rz - -4.5) < 1.35) continue; // Windmill base
+            if (Math.hypot(rx - 5.75, rz - -2.45) < 1.1) continue; // Campfire circle
+            const slope = Math.hypot(
+                (getContinuousAlpineHeight(rx + 0.2, rz, this.world) - getContinuousAlpineHeight(rx - 0.2, rz, this.world)) / 0.4,
+                (getContinuousAlpineHeight(rx, rz + 0.2, this.world) - getContinuousAlpineHeight(rx, rz - 0.2, this.world)) / 0.4
+            );
+            if (slope > 0.55) continue; // Rocky slope
             let nearRoad = false;
             if (this.world && this.world.edges && this.world.byId) {
                 for (const e of this.world.edges) {

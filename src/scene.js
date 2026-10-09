@@ -1451,13 +1451,14 @@ export class DriveScene {
     this.alpinePassage.group.scale.set(1, 1, 1);
     this.alpinePassage.group.position.set(0, 0, 0);
     Object.assign(this.sun.shadow.camera, {
-      left: -32,
-      right: 32,
-      top: 32,
-      bottom: -32,
+      left: -16.5,
+      right: 16.5,
+      top: 16.5,
+      bottom: -16.5,
       near: 4,
-      far: 95,
+      far: 50,
     });
+    this.sun.shadow.radius = 1.1;
     this.sun.shadow.camera.updateProjectionMatrix();
   }
   render(dt, draw = true) {
@@ -1918,9 +1919,21 @@ export class DriveScene {
           ).multiplyScalar(25 * carScale),
         );
     } else if (this.mode === "overview" && this.sim.world.type === "alpine") {
-      // Iconic Four-Seasons Diorama Overview Vantage (16, 12, 16 -> 0, 0.35, 0)
-      pos = new THREE.Vector3(16, 12, 16);
-      look = new THREE.Vector3(0, 0.35, 0);
+      // Iconic Four-Seasons Golden 3/4 Isometric Vantage with 360-degree interactive orbit drag & zoom
+      const view = this.cameraInput.current() || { yaw: 0, pitch: 0.46, distance: 22.8 };
+      // Golden 3/4 perspective offset: road sweeps diagonally across screen, peak towers on left, hamlet on right
+      const GOLDEN_YAW_OFFSET = 0.52;
+      const orbitYaw = Math.PI / 4 + GOLDEN_YAW_OFFSET + (view.yaw || 0);
+      const pitch = Math.max(0.18, Math.min(1.25, view.pitch ?? 0.46));
+      const dist = Math.max(10.0, Math.min(48.0, view.distance ?? 22.8));
+      const hDist = Math.cos(pitch) * dist;
+      const vHeight = Math.sin(pitch) * dist;
+      pos = new THREE.Vector3(
+        Math.sin(orbitYaw) * hDist,
+        vHeight,
+        Math.cos(orbitYaw) * hDist,
+      );
+      look = new THREE.Vector3(0, 0.42, 0);
     } else if (this.mode === "map" && this.sim.world.type === "alpine") {
       const py = this.player.position.y || 0.05;
       const view = this.cameraInput.current();
@@ -2000,8 +2013,11 @@ export class DriveScene {
       this.sun.color.copy(T.sunColor);
       this.sun.intensity = LIGHT_POWER * T.sunIntensity * (1 - S.cloudShade * 0.35);
       const sunDist = this.sim.world.type === "alpine" ? 46 : 22;
-      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(sunDist).add(new THREE.Vector3(v.x, 0, v.z));
-      this.sun.target.position.set(v.x, 0, v.z);
+      const targetPos = (this.mode === "overview" && this.sim.world.type === "alpine")
+        ? new THREE.Vector3(0, 0.45, 0)
+        : new THREE.Vector3(v.x, 0, v.z);
+      this.sun.position.copy(this.seasons.lightDir).multiplyScalar(sunDist).add(targetPos);
+      this.sun.target.position.copy(targetPos);
       this.sun.target.updateMatrixWorld();
 
       this.hemiLight.color.copy(T.hemiSky);

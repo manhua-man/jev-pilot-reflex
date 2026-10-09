@@ -58,6 +58,7 @@ export class CameraInput {
   reset() {
     this.states = {
       chase: { yaw: 0, pitch: 0.48, distance: 20 },
+      overview: { yaw: 0, pitch: 0.48, distance: 22.6 },
       map: { yaw: 0, pitch: 1.25, distance: 150 },
       hood: { yaw: 0, pitch: 0, distance: 0 },
     };

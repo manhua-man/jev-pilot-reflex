@@ -419,8 +419,21 @@ function changeCamera() {
   }[scene.mode] || "Chase";
   tooltips.set(
     $("camera"),
-    `Change camera · ${$("camera-name").textContent} · C`,
+    scene.mode === "overview"
+      ? `Change camera · Diorama · C (按 H 开启纯净赏景)`
+      : `Change camera · ${$("camera-name").textContent} · C`,
   );
+}
+function toggleCinematic(force) {
+  const isCinematic = document.body.classList.toggle("cinematic-mode", force);
+  let pill = $("cinematic-pill");
+  if (!pill) {
+    pill = document.createElement("div");
+    pill.id = "cinematic-pill";
+    pill.innerHTML = `<span style="font-size:16px;">🏔️</span><strong>Alpine Passage</strong><span style="opacity:0.65;font-size:12px;">按 H 或点击退出纯景</span>`;
+    pill.addEventListener("click", () => toggleCinematic(false));
+    document.body.appendChild(pill);
+  }
 }
 function togglePause() {
   if (sim.crash || loading) return;
@@ -707,8 +720,8 @@ document.addEventListener("fullscreenchange", () => {
 window.addEventListener("keydown", (e) => {
   if (sim.crash || loading) return;
   if ($("json-dialog").open || $("help-dialog").open) return;
-  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
-  if (e.target.closest("button") && ["Space", "Enter"].includes(e.code)) return;
+  if (e.target?.tagName && ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+  if (e.target?.closest && e.target.closest("button") && ["Space", "Enter"].includes(e.code)) return;
   const driving = [
     "KeyW",
     "KeyA",
@@ -765,6 +778,8 @@ window.addEventListener("keydown", (e) => {
     }
   }
   if (e.code === "KeyM") toggleAudio();
+  if (e.code === "KeyH") toggleCinematic();
+  if (e.code === "Escape" && document.body.classList.contains("cinematic-mode")) toggleCinematic(false);
   if (e.code === "Digit1") setSeasonIndex(0);
   if (e.code === "Digit2") setSeasonIndex(1);
   if (e.code === "Digit3") setSeasonIndex(2);
