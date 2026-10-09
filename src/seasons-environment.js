@@ -640,6 +640,7 @@ export class ProceduralSky {
         const g = new THREE.DodecahedronGeometry(r, 1);
         g.scale(1, 0.65, 1);
         const mesh = new THREE.Mesh(g, this.cloudMaterial);
+        mesh.castShadow = true;
         mesh.position.set((j - n / 2) * 1.35 + ((j * 5) % 3 - 1) * 0.35, ((j * 7) % 3 - 1) * 0.3, ((j * 11) % 3 - 1) * 0.5);
         puffGroup.add(mesh);
       }

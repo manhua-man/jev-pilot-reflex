@@ -715,6 +715,50 @@ function createSafeCanvas(w = 256, h = 256) {
             return g;
         }
 
+        let _sharedRockGeo = null;
+        function getSharedRockGeometry() {
+            if (!_sharedRockGeo) {
+                _sharedRockGeo = makeRockGeometry();
+            }
+            return _sharedRockGeo;
+        }
+
+        let _sharedFernGeo = null;
+        function getSharedFernGeometry() {
+            if (!_sharedFernGeo) {
+                const fronds = [];
+                for (let i = 0; i < 7; i++) {
+                    const g = new THREE.PlaneGeometry(0.07, 0.42, 1, 4).translate(0, 0.21, 0);
+                    const p = g.attributes.position;
+                    for (let v = 0; v < p.count; v++) {
+                        const y = p.getY(v);
+                        p.setX(v, p.getX(v) * (1 - y / 0.5));
+                        p.setZ(v, y * y * 1.4);
+                    }
+                    g.rotateX(-0.35);
+                    g.rotateY((i / 7) * Math.PI * 2);
+                    fronds.push(g);
+                }
+                _sharedFernGeo = mergeGeometries(fronds);
+                _sharedFernGeo.computeVertexNormals();
+            }
+            return _sharedFernGeo;
+        }
+
+        let _sharedBushGeo = null;
+        function getSharedBushGeometry() {
+            if (!_sharedBushGeo) {
+                _sharedBushGeo = mergeGeometries([
+                    new THREE.IcosahedronGeometry(0.22, 1).translate(0, 0.14, 0),
+                    new THREE.IcosahedronGeometry(0.17, 1).translate(0.16, 0.1, 0.05),
+                    new THREE.IcosahedronGeometry(0.15, 1).translate(-0.14, 0.09, -0.06)
+                ]);
+                _sharedBushGeo.computeVertexNormals();
+            }
+            return _sharedBushGeo;
+        }
+
+
         /* ════════════════════════════════════════════════════════════════════
            MIST PUFFS — tiny shader-animated point clouds (spring source, cascade).
            No CPU updates. Reads: uTime, uFreeze, uNight.
@@ -1719,10 +1763,15 @@ function createSafeCanvas(w = 256, h = 256) {
            Reads: uWindTime/uTime (cloth), uSnowCoverage (cap snow, plinth dusting).
            ════════════════════════════════════════════════════════════════════ */
         class Windmill {
-            constructor(scene, glowMaterials) {
+            constructor(scene, glowMaterials, customPos = null, customRotY = null) {
                 const mill = new THREE.Group();
-                mill.position.set(WINDMILL_X, getTerrainHeight(WINDMILL_X, WINDMILL_Z), WINDMILL_Z);
-                mill.rotation.y = Math.atan2(-WINDMILL_X, -WINDMILL_Z);
+                if (customPos) {
+                    mill.position.copy(customPos);
+                    mill.rotation.y = (customRotY !== null) ? customRotY : 0;
+                } else {
+                    mill.position.set(WINDMILL_X, getTerrainHeight(WINDMILL_X, WINDMILL_Z), WINDMILL_Z);
+                    mill.rotation.y = Math.atan2(-WINDMILL_X, -WINDMILL_Z);
+                }
 
                 const stone = patchMaterial(stdMat(0x7d766e, 0.95), { key: 'dusted-stone', worldNormal: true, fragmentColor: snowDustCode('0.9') });
                 const plaster = stdMat(0xe3dccb, 0.9);
@@ -2883,8 +2932,9 @@ class AlpineChunk {
             }
         }
 
-        // Mountain Boulders with snow dusting
+        // Mountain Boulders with organic noise-jittered rock geometry & snow dusting
         const rockCount = 14;
+        const sharedRock = getSharedRockGeometry();
         for (let j = 0; j < rockCount; j++) {
             const bx = ox + 1.0 + (hash(this.cx * 43 + j * 29, this.cz * 67 + j * 7) % 1) * (CHUNK_SIZE - 2.0);
             const bz = oz + 1.0 + (hash(this.cz * 37 + j * 19, this.cx * 53 + j * 13) % 1) * (CHUNK_SIZE - 2.0);
@@ -2910,7 +2960,12 @@ class AlpineChunk {
             }
             if (nearRoad) continue;
 
-            batch.add(new THREE.DodecahedronGeometry(bs), stoneMat, bx, bh + bs * 0.45, bz, (rand() - 0.5) * 0.3, rand() * Math.PI, 0);
+            const mRock = new THREE.Matrix4()
+                .makeTranslation(bx, bh + bs * 0.32, bz)
+                .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2))
+                .multiply(new THREE.Matrix4().makeScale(bs * 1.15, bs * 0.72, bs * 1.05));
+            batch.addMatrix(sharedRock, stoneMat, mRock);
+            batch.add(snowSlab(bs * 0.82, 0.04, bs * 0.82), snowSlabMaterial, bx, bh + bs * 0.62, bz);
         }
 
         // Swiss Alpine Log Cabins in extended chunks (nestled beside the road)
@@ -2944,11 +2999,45 @@ class AlpineChunk {
                     const windowGlowMat = new THREE.MeshStandardMaterial({ color: 0xffb040, emissive: 0xff7a18, emissiveIntensity: 2.2, roughness: 0.3 });
                     batch.add(new THREE.BoxGeometry(0.28 * chScale, 0.28 * chScale, 0.05 * chScale), windowGlowMat, sp.rx, chY + 0.85 * chScale, sp.rz + 0.63 * chScale);
 
+                    // Stacked firewood log pile against left wall with snow slab on top
+                    const logGeo = new THREE.CylinderGeometry(0.045 * chScale, 0.045 * chScale, 0.42 * chScale, 6).rotateZ(Math.PI / 2);
+                    for (let row = 0; row < 3; row++) {
+                        for (let i = 0; i < 6 - row; i++) {
+                            batch.add(logGeo, trunkMat, sp.rx - 0.95 * chScale, chY + (0.05 + row * 0.08) * chScale, sp.rz - 0.28 * chScale + i * 0.1 * chScale + row * 0.05 * chScale);
+                        }
+                    }
+                    batch.add(snowSlab(0.46 * chScale, 0.05 * chScale, 0.65 * chScale), snowSlabMaterial, sp.rx - 0.95 * chScale, chY + 0.32 * chScale, sp.rz);
+
+                    // Rustic timber perimeter fence enclosing the yard
+                    const fenceR = 1.6 * chScale;
+                    for (let fa = -0.5; fa <= 1.8; fa += 0.45) {
+                        const fx = sp.rx + Math.cos(fa) * fenceR, fz = sp.rz + Math.sin(fa) * fenceR;
+                        const fy = getContinuousAlpineHeight(fx, fz, this.world);
+                        batch.add(new THREE.CylinderGeometry(0.035 * chScale, 0.045 * chScale, 0.42 * chScale, 5), woodRail, fx, fy + 0.2 * chScale, fz);
+                        batch.box(woodRail, 0.03 * chScale, 0.04 * chScale, 0.45 * chScale, fx, fy + 0.28 * chScale, fz, 0, -fa, 0);
+                    }
+
+                    // Glowing entry door lantern with warm light
+                    batch.add(new THREE.CylinderGeometry(0.05 * chScale, 0.035 * chScale, 0.14 * chScale, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.6, 0.7), toneMapped: false }), sp.rx - 0.3 * chScale, chY + 0.95 * chScale, sp.rz + 0.65 * chScale);
+                    const lanternLight = new THREE.PointLight(0xff7711, 0.9, 4.0, 1.4);
+                    lanternLight.position.set(sp.rx - 0.3 * chScale, chY + 0.95 * chScale, sp.rz + 0.68 * chScale);
+                    this.group.add(lanternLight);
+
                     // Animated Chimney Smoke Curling in Alpine Wind
                     const chimneyPos = new THREE.Vector3(sp.rx + 0.35 * chScale, chY + 2.12 * chScale, sp.rz + 0.25 * chScale);
                     const smoke = new ChimneySmoke(this.group, chimneyPos, 14);
                     this.updatables.push(smoke);
                 }
+            }
+        }
+
+        // High Mountain Pass Historic Windmill on scenic summit ridge (chunk cx=1, cz=-1)
+        if (this.cx === 1 && this.cz === -1) {
+            const millX = ox + 11.5, millZ = oz + 11.5;
+            const millY = getContinuousAlpineHeight(millX, millZ, this.world);
+            if (millY >= 1.8) {
+                const windmill = new Windmill(this.group, this.glowMaterials, new THREE.Vector3(millX, millY, millZ), -Math.PI / 3);
+                this.updatables.push(windmill);
             }
         }
 
@@ -3094,13 +3183,46 @@ class AlpineChunk {
                 waterMesh.renderOrder = 2;
                 this.group.add(waterMesh);
 
-                // Riverbed boulders & stones in the brook
+                // Riverbed boulders & stones in the brook (jittered granite crags with snow dusting)
+                const brookRockGeo = getSharedRockGeometry();
                 for (let rb = -4; rb <= 4; rb += 1.8) {
                     const rbx = pierPos.x + Math.sin(streamPerp) * rb + (rand() - 0.5) * 0.6;
                     const rbz = pierPos.z - Math.cos(streamPerp) * rb + (rand() - 0.5) * 0.6;
                     const rbs = 0.18 + rand() * 0.22;
-                    batch.add(new THREE.DodecahedronGeometry(rbs), stoneMat, rbx, streamY + rbs * 0.35, rbz, rand() * 0.4, rand() * Math.PI, 0);
-                    batch.add(snowSlab(rbs * 0.7, 0.04, rbs * 0.7), snowSlabMaterial, rbx, streamY + rbs * 0.7, rbz);
+                    const mBrook = new THREE.Matrix4()
+                        .makeTranslation(rbx, streamY + rbs * 0.28, rbz)
+                        .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2))
+                        .multiply(new THREE.Matrix4().makeScale(rbs * 1.1, rbs * 0.65, rbs * 1.0));
+                    batch.addMatrix(brookRockGeo, stoneMat, mBrook);
+                    batch.add(snowSlab(rbs * 0.72, 0.04, rbs * 0.72), snowSlabMaterial, rbx, streamY + rbs * 0.62, rbz);
+                }
+
+                // Arching stream-bank ferns and bushes lining both banks of the canyon brook
+                const bankFernGeo = getSharedFernGeometry();
+                const bankBushGeo = getSharedBushGeometry();
+                for (let side of [-1, 1]) {
+                    for (let fb = -4.5; fb <= 4.5; fb += 1.5) {
+                        const offBank = side * (1.45 + (rand() - 0.5) * 0.35);
+                        const fbx = pierPos.x + Math.sin(streamPerp) * fb + Math.cos(streamPerp) * offBank;
+                        const fbz = pierPos.z - Math.cos(streamPerp) * fb + Math.sin(streamPerp) * offBank;
+                        const fby = streamY + 0.04 + rand() * 0.08;
+                        const isFern = (rand() < 0.65);
+                        if (isFern) {
+                            const fScale = 0.6 + rand() * 0.35;
+                            const mFern = new THREE.Matrix4()
+                                .makeTranslation(fbx, fby, fbz)
+                                .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2))
+                                .multiply(new THREE.Matrix4().makeScale(fScale, fScale, fScale));
+                            batch.addMatrix(bankFernGeo, needleMat, mFern);
+                        } else {
+                            const bScale = 0.55 + rand() * 0.35;
+                            const mBush = new THREE.Matrix4()
+                                .makeTranslation(fbx, fby, fbz)
+                                .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2))
+                                .multiply(new THREE.Matrix4().makeScale(bScale, bScale, bScale));
+                            batch.addMatrix(bankBushGeo, birchLeaves, mBush);
+                        }
+                    }
                 }
 
                 // C. Waterfall Spray & Mist Puff rising from the brook
