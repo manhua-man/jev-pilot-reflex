@@ -518,6 +518,12 @@ export function personModel(o) {
   g.userData.limbs = { legs, arms };
   return g;
 }
+
+const smoothCurve = (x, min, max) => {
+  const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
+  return t * t * (3 - 2 * t);
+};
+
 export class DriveScene {
   constructor(canvas, sim, vectorLayer) {
     this.vectorLayer = vectorLayer;
@@ -526,6 +532,7 @@ export class DriveScene {
     this.mode = "chase";
     this.cameraInput = new CameraInput(canvas, () => this.mode);
     this.showSensors = false;
+    this._sunTargetPos = new THREE.Vector3();
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: renderProfile.antialias,
@@ -1498,12 +1505,8 @@ export class DriveScene {
       const hCenter = getContinuousAlpineHeight(v.x, v.z, this.sim.world);
       const along = v.x * 0.707106 + v.z * 0.707106;
       const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
-      const smooth = (x, min, max) => {
-        const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
-        return t * t * (3 - 2 * t);
-      };
       const bridgeBoost = (Math.abs(v.x) <= 7.5 && Math.abs(v.z) <= 7.5)
-        ? (1 - smooth(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
+        ? (1 - smoothCurve(Math.abs(along - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
         : 0;
       this.player.position.y = Math.max(hCenter, 0.03) + bridgeBoost;
 
@@ -1547,12 +1550,8 @@ export class DriveScene {
           const hCenter = getContinuousAlpineHeight(p.x, p.z, this.sim.world);
           const pAlong = p.x * 0.707106 + p.z * 0.707106;
           const BRIDGE_ALONG = -0.72 * 0.707106 + -0.72 * 0.707106;
-          const smooth = (x, min, max) => {
-            const t = Math.max(0, Math.min(1, (x - min) / (max - min)));
-            return t * t * (3 - 2 * t);
-          };
           const bridgeBoost = (Math.abs(p.x) <= 7.5 && Math.abs(p.z) <= 7.5)
-            ? (1 - smooth(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
+            ? (1 - smoothCurve(Math.abs(pAlong - BRIDGE_ALONG), 0.78, 1.34)) * 0.065
             : 0;
           py = Math.max(hCenter, 0.03) + bridgeBoost;
 
@@ -2018,9 +2017,12 @@ export class DriveScene {
       this.sun.color.copy(T.sunColor);
       this.sun.intensity = LIGHT_POWER * T.sunIntensity * (1 - S.cloudShade * 0.35);
       const sunDist = this.sim.world.type === "alpine" ? 46 : 22;
-      const targetPos = (this.mode === "overview" && this.sim.world.type === "alpine")
-        ? new THREE.Vector3(0, 0.45, 0)
-        : new THREE.Vector3(v.x, 0, v.z);
+      const targetPos = this._sunTargetPos;
+      if (this.mode === "overview" && this.sim.world.type === "alpine") {
+        targetPos.set(0, 0.45, 0);
+      } else {
+        targetPos.set(v.x, 0, v.z);
+      }
       this.sun.position.copy(this.seasons.lightDir).multiplyScalar(sunDist).add(targetPos);
       this.sun.target.position.copy(targetPos);
       this.sun.target.updateMatrixWorld();
