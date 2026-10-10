@@ -1192,6 +1192,30 @@ export class DriveScene {
     this.player.add(this.blinkerRight);
     this.blinkerRight.visible = false;
 
+    // Rear Turn Signals (后置琥珀色转向灯)
+    this.blinkerRearLeft = new THREE.Mesh(bGeo, amberMat);
+    this.blinkerRearLeft.position.set(-0.82, 0.85, -2.15);
+    this.player.add(this.blinkerRearLeft);
+    this.blinkerRearLeft.visible = false;
+
+    this.blinkerRearRight = new THREE.Mesh(bGeo, amberMat);
+    this.blinkerRearRight.position.set(0.82, 0.85, -2.15);
+    this.player.add(this.blinkerRearRight);
+    this.blinkerRearRight.visible = false;
+
+    // Reverse Backup Lights (白色倒车灯)
+    this.reverseLights = new THREE.Group();
+    const revGeo = new THREE.BoxGeometry(0.14, 0.06, 0.06);
+    this.revMat = new THREE.MeshBasicMaterial({ color: "#f8fafc" });
+    const leftRev = new THREE.Mesh(revGeo, this.revMat);
+    leftRev.position.set(-0.48, 0.85, -2.16);
+    this.reverseLights.add(leftRev);
+    const rightRev = new THREE.Mesh(revGeo, this.revMat);
+    rightRev.position.set(0.48, 0.85, -2.16);
+    this.reverseLights.add(rightRev);
+    this.player.add(this.reverseLights);
+    this.reverseLights.visible = false;
+
     // Vehicle Dual Front Headlights (前大灯聚光锥与发光透镜)
     this.headlights = new THREE.Group();
     this.headlightTarget = new THREE.Object3D();
@@ -1250,6 +1274,9 @@ export class DriveScene {
         playerGroup.add(model);
         playerGroup.add(this.blinkerLeft);
         playerGroup.add(this.blinkerRight);
+        playerGroup.add(this.blinkerRearLeft);
+        playerGroup.add(this.blinkerRearRight);
+        playerGroup.add(this.reverseLights);
         playerGroup.add(this.headlights);
         playerGroup.add(this.headlightTarget);
         playerGroup.add(this.tailLights);
@@ -1605,8 +1632,16 @@ export class DriveScene {
     }
 
     const blinkOn = Math.floor(this.sim.time * 4) % 2 === 0;
-    if (this.blinkerLeft) this.blinkerLeft.visible = this.sim.blinker === "left" && blinkOn;
-    if (this.blinkerRight) this.blinkerRight.visible = this.sim.blinker === "right" && blinkOn;
+    const lBlink = this.sim.blinker === "left" && blinkOn;
+    const rBlink = this.sim.blinker === "right" && blinkOn;
+    if (this.blinkerLeft) this.blinkerLeft.visible = lBlink;
+    if (this.blinkerRight) this.blinkerRight.visible = rBlink;
+    if (this.blinkerRearLeft) this.blinkerRearLeft.visible = lBlink;
+    if (this.blinkerRearRight) this.blinkerRearRight.visible = rBlink;
+
+    // Reverse backup lights (车身倒退或处于倒挡时点亮白色倒车灯)
+    const isReversing = v.speed < -0.05 || (this.sim.pedals?.throttle < -0.01 && v.speed < 0.2);
+    if (this.reverseLights) this.reverseLights.visible = isReversing;
 
     // Render Multi-Agent Game Theory Swarm
     if (this.sim.gameManager?.agents) {

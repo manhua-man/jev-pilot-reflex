@@ -2754,11 +2754,41 @@ function createAlpineSignboard(scene, title, subtitle, posX, posY, posZ, rotY, s
     const canvas = createSafeCanvas();
     canvas.width = 512; canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#173e4c'; ctx.fillRect(0, 0, 512, 256);
-    ctx.strokeStyle = '#dff7f9'; ctx.lineWidth = 13; ctx.strokeRect(13, 13, 486, 230);
-    ctx.fillStyle = '#f4fbf8'; ctx.textAlign = 'center';
-    ctx.font = '700 66px Arial'; ctx.fillText(title, 256, 105);
-    ctx.font = '600 44px Arial'; ctx.fillText(subtitle, 256, 182);
+    
+    // Deep Swiss alpine green backdrop
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#164236');
+    grad.addColorStop(1, '#0c2720');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 512, 256);
+    
+    // Crisp white double border with rounded aesthetic
+    ctx.strokeStyle = '#e2f4ed'; ctx.lineWidth = 10;
+    ctx.strokeRect(12, 12, 488, 232);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'; ctx.lineWidth = 2;
+    ctx.strokeRect(20, 20, 472, 216);
+
+    // Alpine Mountain Peak Icon & Route Mark
+    ctx.fillStyle = '#facc15';
+    ctx.font = '700 24px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('▲  ALPENPASS  ▲', 256, 48);
+
+    // Main Location Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 52px Arial, sans-serif';
+    ctx.fillText(title, 256, 118);
+
+    // Subtitle / Altitude
+    ctx.fillStyle = '#67e8f9';
+    ctx.font = '600 36px Arial, sans-serif';
+    ctx.fillText(subtitle, 256, 178);
+
+    // Bottom Decorative Notch
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.font = '500 20px Arial, sans-serif';
+    ctx.fillText('🇨🇭 SWISS HIGH PASS · PANORAMA ROUTE', 256, 218);
+
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     const sign = new THREE.Group();
@@ -2767,8 +2797,14 @@ function createAlpineSignboard(scene, title, subtitle, posX, posY, posZ, rotY, s
     const b = new StaticBatch();
     const postMat = new THREE.MeshStandardMaterial({ color: 0x48565a, metalness: 0.55, roughness: 0.5 });
     [-0.34, 0.34].forEach(x => b.box(postMat, 0.055, 1.35, 0.055, x, 0.68, 0));
-    b.add(new THREE.PlaneGeometry(1.35, 0.67), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.68, side: THREE.DoubleSide }), 0, 1.25, 0.035);
-    b.box(postMat, 1.37, 0.69, 0.02, 0, 1.25, 0.018);
+    
+    const signMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.65 });
+    // Front face (facing +z)
+    b.add(new THREE.PlaneGeometry(1.35, 0.67), signMat, 0, 1.25, 0.035);
+    // Back face (facing -z, rotated by Math.PI around Y so text is readable from rear)
+    b.add(new THREE.PlaneGeometry(1.35, 0.67), signMat, 0, 1.25, 0.001, 0, Math.PI, 0);
+
+    b.box(postMat, 1.37, 0.69, 0.03, 0, 1.25, 0.018);
     b.build(sign);
     const signSnow = new THREE.Mesh(snowSlab(1.37, 0.05, 0.06), snowSlabMat);
     signSnow.position.set(0, 1.585, 0.035);
