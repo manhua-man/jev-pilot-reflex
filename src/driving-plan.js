@@ -74,8 +74,12 @@ function clearSegment(a, b, buildings, padding) {
 }
 
 export function recoveryTarget(car, surfaces, buildings) {
+  const isAlpine = Boolean(car.depth && car.depth < 2.0);
   const near = nearestOnPath(car, car.route.points);
-  const targets = [8, 14, 20, 4, 0, -6, 28, -12, 40]
+  const offsets = isAlpine
+    ? [1.5, 3.0, 5.0, 0.8, 0, -1.5, 8.0]
+    : [8, 14, 20, 4, 0, -6, 28, -12, 40];
+  const targets = offsets
     .map((offset) => {
       const p = pointAt(
         car.route.points,
@@ -83,8 +87,11 @@ export function recoveryTarget(car, surfaces, buildings) {
       );
       return { ...p, heading: p.heading ?? near.heading };
     })
-    .filter((p) => roadOccupancy({ ...car, ...p }, surfaces).on_road);
-  const padding = car.width / 2 + 0.25;
+    .filter((p) => {
+      const occ = roadOccupancy({ ...car, ...p }, surfaces);
+      return isAlpine ? occ.outside_fraction < 0.35 : occ.on_road;
+    });
+  const padding = car.width / 2 + (isAlpine ? 0.08 : 0.25);
   const visible = targets.filter((p) =>
     clearSegment(car, p, buildings, padding),
   );
@@ -152,24 +159,28 @@ export function createDrivingPlan(
   ceiling,
   control = null,
 ) {
+  const isAlpine = world.type === "alpine" || Boolean(car.depth && car.depth < 2.0);
   const surfaces = localRoads(
     world,
     car,
-    Math.max(100, Math.abs(car.speed) * 4),
+    Math.max(isAlpine ? 35 : 100, Math.abs(car.speed) * 4),
   );
   const occupancy = roadOccupancy(car, surfaces),
     near = nearestOnPath(car, car.route.points, Math.floor(car.s || 0));
   const recovering =
-    !occupancy.on_road ||
-    near.distance > 6 ||
-    Math.abs(angle(near.heading - car.heading)) > 1.2;
+    (isAlpine ? occupancy.outside_fraction > 0.45 : !occupancy.on_road) ||
+    near.distance > (isAlpine ? 1.8 : 6) ||
+    Math.abs(angle(near.heading - car.heading)) > (isAlpine ? 2.2 : 1.2);
   const section = routeSection(car, near.s);
   const merging = ["onramp", "merge"].includes(section?.kind);
   const buildings = obstacles.filter((o) => o.type === "building");
   const recovery = recovering ? recoveryTarget(car, surfaces, buildings) : null;
+  const goalLead = isAlpine
+    ? Math.max(1.4, Math.min(3.8, 1.4 + Math.abs(car.speed) * 0.35))
+    : Math.max(5, Math.abs(car.speed) * 1.2);
   const goal =
     recovery?.waypoint ||
-    pointAt(car.route.points, near.s + Math.max(5, Math.abs(car.speed) * 1.2));
+    pointAt(car.route.points, near.s + goalLead);
   const crossing = car.route.crossings.find((c) => c.stopS - near.s > -19);
   const stopLine = crossing
     ? {
@@ -192,7 +203,7 @@ export function createDrivingPlan(
       ((world.byId[crossing.nodeId]?.control || "none") === "signal" &&
         ["red", "amber"].includes(control.color)));
   const maxSpeed = recovering
-    ? 2
+    ? (isAlpine ? 1.5 : 2)
     : round(
         Math.min(
           ceiling,
@@ -245,14 +256,16 @@ export function createDrivingPlan(
         Math.cos(angle(o.heading - near.heading)) > 0 &&
         nearestOnPath(o, localRoute).distance < 8,
     );
+  const wb = car.wheelbase || (car.depth ? car.depth * 0.58 : WHEELBASE);
   const guide = steeringForCurvature(
     (2 * Math.sin(angle(heading(car, goal) - car.heading))) /
-      Math.max(4, dist(car, goal)),
+      Math.max(isAlpine ? 0.9 : 4, dist(car, goal)),
     car.speed,
+    wb,
   );
   const limit = recovering
     ? 0.85
-    : 0.85 * Math.min(1, 9 / Math.max(5, Math.abs(car.speed)));
+    : 0.85 * Math.min(1, (isAlpine ? 4.5 : 9) / Math.max(isAlpine ? 2.5 : 5, Math.abs(car.speed)));
 
   const laneHalfWidth =
     section?.laneHalfWidth ?? (world.type === "highway" ? 2.25 : (world.type === "alpine" ? 0.65 : 2.5));
@@ -449,14 +462,14 @@ export function createDrivingPlan(
     const laneOffset =
       recovering || i >= 44
         ? null
-        : round((random() * 2 - 1) * (i < 14 ? 0.1 : i < 30 ? 0.65 : 1.35), 3);
+        : round((random() * 2 - 1) * (isAlpine ? 0.22 : 1.0) * (i < 14 ? 0.1 : i < 30 ? 0.65 : 1.35), 3);
     const lookahead = recovering
       ? null
       : round(
           clamp(
-            3.5 + Math.max(car.speed, maxSpeed) * 0.36 + random() * 0.8,
-            4,
-            10,
+            (isAlpine ? 1.2 : 3.5) + Math.max(car.speed, maxSpeed) * (isAlpine ? 0.18 : 0.36) + random() * (isAlpine ? 0.3 : 0.8),
+            isAlpine ? 1.2 : 4,
+            isAlpine ? 3.6 : 10,
           ),
           2,
         );

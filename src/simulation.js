@@ -123,6 +123,7 @@ export class Simulation {
       intersectionMemory: null,
       width: type === "alpine" ? 0.36 : 1.9,
       depth: type === "alpine" ? 0.90 : 4.75,
+      wheelbase: type === "alpine" ? 0.52 : 2.7,
     };
     this.traffic = [];
     for (let i = 0; i < this.world.theme.traffic; i++) this.spawnTraffic(i);
@@ -299,6 +300,7 @@ export class Simulation {
       stops: {},
       width: vWidth,
       depth: vDepth,
+      wheelbase: alpine ? 0.52 : 2.7,
       color: choose(this.r, [
         "#de8e69",
         "#e9be57",
@@ -876,6 +878,35 @@ export class Simulation {
       })),
     ]);
     if (hit) {
+      // Glancing scrape / low-speed bumper tap handling:
+      // Allow bouncing off obstacles or sliding along barriers rather than instant Game Over
+      const isAlpine = this.world.type === "alpine";
+      const isBarrier = hit.object.type === "building";
+      const normalVelocity = Math.abs(
+        Math.sin(v.heading) * v.speed * (hit.normal?.x || 0) -
+        Math.cos(v.heading) * v.speed * (hit.normal?.z || 0)
+      );
+      const isGlancing = isBarrier && normalVelocity < (isAlpine ? 1.8 : 2.2);
+      const isLowSpeedTap =
+        hit.object.type !== "pedestrian" &&
+        Math.abs(v.speed) < (isAlpine ? 1.6 : 1.8) &&
+        hit.relativeSpeed < (isAlpine ? 2.2 : 2.0);
+
+      if (isGlancing || isLowSpeedTap) {
+        // Bounce car gently outward along the collision normal to prevent clipping into barrier
+        const pushDist = isAlpine ? 0.08 : 0.2;
+        v.x = old.x + (hit.normal?.x || 0) * pushDist;
+        v.z = old.z + (hit.normal?.z || 0) * pushDist;
+        // Scrub 45% speed on barrier scrape, or reverse slightly on low speed frontal tap
+        if (isGlancing && Math.abs(v.speed) > 0.6) {
+          v.speed *= 0.55;
+          this.event("轻微擦碰护栏/岩石，车辆减速继续行驶", "warning");
+        } else {
+          v.speed = -Math.sign(v.speed || 1) * (isAlpine ? 0.35 : 0.6);
+          this.event(`轻微触碰 ${isBarrier ? "路边障碍" : "前车"}，请倒车脱困`, "warning");
+        }
+        return;
+      }
       Object.assign(v, {
         x: hit.player.x,
         z: hit.player.z,
@@ -1833,6 +1864,26 @@ export class Simulation {
       this.event("定点导航已激活：自车将在当前航段终点平稳制动停靠", "info");
     }
     return this.endlessCruising;
+  }
+  resetToRoad() {
+    if (!this.world || !this.world.route || !this.world.route.points?.length) return;
+    const v = this.player;
+    const near = nearestOnPath(v, this.world.route.points);
+    const targetPt = pointAt(this.world.route.points, near.s);
+    const aheadPt = pointAt(this.world.route.points, near.s + (this.world.type === "alpine" ? 0.5 : 1.5));
+    v.x = targetPt.x;
+    v.z = targetPt.z;
+    v.heading = heading(targetPt, aheadPt);
+    v.speed = 0;
+    v.steering = 0;
+    v.steeringProgress = 0;
+    v.target = 0;
+    v.s = near.s;
+    this.crash = null;
+    this.aebActive = false;
+    this.aebTimer = 0;
+    this.event("车辆已平稳复位至道路中心", "success");
+    return true;
   }
   appendNextLeg() {
     if (this.time - this.lastLegAdvance < 2.5) return;

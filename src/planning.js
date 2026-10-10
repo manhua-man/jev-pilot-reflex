@@ -48,24 +48,26 @@ function steeringAngleScale(speed) {
   return 0.58 + 0.37 * (1 - clamp((Math.abs(speed) - 3) / 5, 0, 1));
 }
 
-export function steeringCurvature(steering, speed) {
-  return Math.tan(steering * steeringAngleScale(speed)) / WHEELBASE;
+export function steeringCurvature(steering, speed, wheelbase = WHEELBASE) {
+  return Math.tan(steering * steeringAngleScale(speed)) / wheelbase;
 }
 
-export function steeringForCurvature(curvature, speed) {
+export function steeringForCurvature(curvature, speed, wheelbase = WHEELBASE) {
   return clamp(
-    Math.atan(WHEELBASE * curvature) / steeringAngleScale(speed),
+    Math.atan(wheelbase * curvature) / steeringAngleScale(speed),
     -0.85,
     0.85,
   );
 }
 
 export function physics(car, steer, target, dt, friction = 1.0) {
-  const maxBraking = BRAKING * Math.max(0.4, friction);
-  const maxAcc = ACCELERATION * Math.max(0.5, Math.min(1.0, friction + 0.1));
+  const isAlpine = Boolean(car.depth && car.depth < 2.0);
+  const maxBraking = (isAlpine ? 10 : BRAKING) * Math.max(0.4, friction);
+  const maxAcc = (isAlpine ? 4.5 : ACCELERATION) * Math.max(0.5, Math.min(1.0, friction + 0.1));
+  const steerRate = isAlpine ? 4.2 : 1.8;
   car.speed += clamp(target - car.speed, -maxBraking * dt, maxAcc * dt);
   const actual = car.wheelSteering ?? car.steering ?? 0;
-  car.wheelSteering = actual + clamp(steer - actual, -1.8 * dt, 1.8 * dt);
+  car.wheelSteering = actual + clamp(steer - actual, -steerRate * dt, steerRate * dt);
   car.steering = steer;
   integratePose(car, car.wheelSteering, dt);
 }
@@ -75,39 +77,55 @@ export function physics(car, steer, target, dt, friction = 1.0) {
 export function pedalPhysics(car, steer, throttle, brake, dt, friction = 1.0) {
   throttle = clamp(throttle, -1, 1);
   brake = clamp(brake, 0, 1);
+  const isAlpine = Boolean(car.depth && car.depth < 2.0);
+  const maxFwdSpeed = isAlpine ? 7.2 : 34;
+  const maxRevSpeed = isAlpine ? -2.5 : -3.5;
+  const maxFwdAcc = isAlpine ? 3.8 : 5.0;
+  const maxRevAcc = isAlpine ? 2.4 : 2.5;
+
   const speed = Math.abs(car.speed);
   const resistance =
     0.18 + 0.0017 * speed * speed + (Math.abs(throttle) < 0.01 ? 0.32 : 0);
   const opposingPedal = throttle * car.speed < -0.01;
   const f = Math.max(0.4, friction);
-  const braking = (brake * 11 + (opposingPedal ? Math.abs(throttle) * 8 : 0)) * f;
-  if (brake || opposingPedal || !throttle) {
+  const braking = (brake * 14 + (opposingPedal ? Math.abs(throttle) * 12 : 0)) * f;
+
+  if (throttle < -0.01 && speed < 0.25) {
+    // Immediate responsive reverse engagement when stopped or crawling
+    car.speed += (throttle * maxRevAcc - Math.sign(car.speed || throttle) * resistance) * dt;
+    car.speed = clamp(car.speed, maxRevSpeed, maxFwdSpeed);
+  } else if (brake || opposingPedal || !throttle) {
     car.speed =
       Math.sign(car.speed) * Math.max(0, speed - (resistance + braking) * dt);
   } else {
-    const acceleration = throttle * (throttle < 0 ? 2.5 : 5) * Math.min(1.0, f + 0.1);
+    const acceleration = throttle * (throttle < 0 ? maxRevAcc : maxFwdAcc) * Math.min(1.0, f + 0.1);
     car.speed +=
       (acceleration - Math.sign(car.speed || throttle) * resistance) * dt;
-    car.speed = clamp(car.speed, -3, 34);
+    car.speed = clamp(car.speed, maxRevSpeed, maxFwdSpeed);
   }
-  // Build a virtual steering stick while a key is held (full travel in 0.63s).
-  // A soft center makes taps precise; continued input reaches a sharp turn.
+
+  // Virtual steering stick with quick response and soft center
   steer = clamp(steer, -1, 1);
   const current = car.steeringProgress || 0;
   const reversing = steer * current < 0;
   const goal = reversing ? 0 : steer;
   const returning = reversing || Math.abs(goal) < Math.abs(current);
-  const step = (returning ? 5 : 1.6) * dt;
+  const step = (returning ? 7.5 : (isAlpine ? 3.8 : 2.0)) * dt;
   car.steeringProgress = current + clamp(goal - current, -step, step);
   const input = car.steeringProgress;
   const shaped = input * (0.2 + 0.8 * Math.abs(input));
+  const speedScale = isAlpine ? 4.5 : 7.0;
   const speedLimit = Math.min(
     1,
-    (0.72 * 1.4) / (1 + (Math.abs(car.speed) / 7) ** 1.4),
+    (isAlpine ? 0.92 : 0.72 * 1.4) / (1 + (Math.abs(car.speed) / speedScale) ** 1.4),
   );
-  // Allow full lock while crawling, then blend into the normal manual cap.
-  const limit =
-    1 + (speedLimit - 1) * clamp((Math.abs(car.speed) - 3) / 5, 0, 1);
+  const minLock = isAlpine ? 0.65 : 0.25;
+  const crawlThreshold = isAlpine ? 1.0 : 3.0;
+  const blendRange = isAlpine ? 2.5 : 5.0;
+  const limit = Math.max(
+    minLock,
+    1 + (speedLimit - 1) * clamp((Math.abs(car.speed) - crawlThreshold) / blendRange, 0, 1),
+  );
   car.wheelSteering = shaped * limit;
   car.steering = steer;
   integratePose(car, car.wheelSteering, dt);
@@ -115,8 +133,9 @@ export function pedalPhysics(car, steer, throttle, brake, dt, friction = 1.0) {
 
 function integratePose(car, steer, dt) {
   if (Math.abs(car.speed) < 0.01) car.speed = 0;
+  const wb = car.wheelbase || (car.depth ? car.depth * 0.58 : WHEELBASE);
   car.heading = angle(
-    car.heading + car.speed * steeringCurvature(steer, car.speed) * dt,
+    car.heading + car.speed * steeringCurvature(steer, car.speed, wb) * dt,
   );
   car.x += Math.sin(car.heading) * car.speed * dt;
   car.z -= Math.cos(car.heading) * car.speed * dt;
@@ -212,10 +231,13 @@ export function maneuverSteering(car, candidate) {
   const center = pointAt(car.route.points, near.s + lookahead);
   const tangent = center.heading ?? near.heading;
   const goal = move(center, tangent + Math.PI / 2, candidate.lane_offset_m);
+  const isAlpine = Boolean(car.depth && car.depth < 2.0);
+  const wb = car.wheelbase || (car.depth ? car.depth * 0.58 : WHEELBASE);
   return steeringForCurvature(
     (2 * Math.sin(angle(heading(car, goal) - car.heading))) /
-      Math.max(2, dist(car, goal)),
+      Math.max(isAlpine ? 0.75 : 2, dist(car, goal)),
     car.speed,
+    wb,
   );
 }
 

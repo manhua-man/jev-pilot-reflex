@@ -329,13 +329,16 @@ export class DriveAudio {
     const speed = Math.abs(v.speed);
 
     // 1. Motor EV Turbine Synth Modulation
-    const baseFreq = 75 + speed * 9.5;
+    const isAlpine = sim.world?.type === "alpine";
+    const maxRefSpeed = isAlpine ? 7.2 : 35;
+    const speedRatio = Math.min(1.2, speed / maxRefSpeed);
+    const baseFreq = 75 + speedRatio * 220;
     const throttleBoost = (sim.pedals.throttle || 0) * 45;
     this.motorOsc.frequency.setTargetAtTime(baseFreq + throttleBoost, now, 0.08);
     this.motorOsc2.frequency.setTargetAtTime((baseFreq + throttleBoost) * 1.5, now, 0.08);
-    this.motorFilter.frequency.setTargetAtTime(320 + speed * 35, now, 0.08);
+    this.motorFilter.frequency.setTargetAtTime(320 + speedRatio * 850, now, 0.08);
 
-    const targetMotorVol = sim.crash ? 0.001 : Math.min(0.22, 0.02 + (speed / 35) * 0.16 + (sim.pedals.throttle ? 0.05 : 0));
+    const targetMotorVol = sim.crash ? 0.001 : Math.min(0.24, 0.02 + speedRatio * 0.16 + (sim.pedals.throttle ? 0.05 : 0));
     this.motorGain.gain.setTargetAtTime(targetMotorVol, now, 0.08);
 
     // 2. Blinker Tick-Tock
@@ -361,7 +364,8 @@ export class DriveAudio {
     }
 
     // 4. Tire Skid Noise on Emergency Brake
-    const hardBraking = (sim.pedals.brake > 0.6 || sim.aebActive) && speed > 2.5;
+    const minSkidSpeed = isAlpine ? 1.2 : 2.5;
+    const hardBraking = (sim.pedals.brake > 0.6 || sim.aebActive) && speed > minSkidSpeed;
     const skidVol = hardBraking ? 0.18 : 0.0001;
     this.skidGain.gain.setTargetAtTime(skidVol, now, 0.06);
 

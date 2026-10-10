@@ -10,17 +10,21 @@ let carAsset;
 const WHEEL_NAMES = ["wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"];
 
 export function updateHeroWheels(model, signedDistance, steering, speed) {
-  const wheelbase = model.userData.wheelbase;
-  const curvature = steeringCurvature(steering, speed);
+  const wheelbase = model.userData.wheelbase || 2.7;
+  const parentScale = model.parent?.scale?.x || 1.0;
+  const curvature = steeringCurvature(steering, speed, wheelbase * parentScale);
+  const effectiveRadius = (wheel) => (wheel.userData.radius || 0.36) * parentScale;
   for (const name of WHEEL_NAMES) {
     const wheel = model.getObjectByName(name);
+    if (!wheel) continue;
     const rotor = wheel.children[0];
-    // Local -Z is forward. Calipers steer with the axle but do not roll.
-    rotor.rotation.x =
-      (rotor.rotation.x - signedDistance / wheel.userData.radius) %
-      (Math.PI * 2);
+    if (rotor) {
+      rotor.rotation.x =
+        (rotor.rotation.x - signedDistance / effectiveRadius(wheel)) %
+        (Math.PI * 2);
+    }
     wheel.rotation.y = wheel.userData.front
-      ? -Math.atan((wheelbase * curvature) / (1 - wheel.position.x * curvature))
+      ? -Math.atan((wheelbase * curvature) / (1 - (wheel.position.x || 0) * curvature))
       : 0;
   }
 }

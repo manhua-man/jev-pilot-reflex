@@ -1499,7 +1499,6 @@ export class DriveScene {
       if (o.userData.control)
         o.visible = Math.hypot(o.position.x - v.x, o.position.z - v.z) < 170;
     this.player.position.set(v.x, 0, v.z);
-    this.player.rotation.y = -v.heading;
     if (this.sim.world.type === "alpine") {
       this.player.scale.set(0.24, 0.24, 0.24);
       const hCenter = getContinuousAlpineHeight(v.x, v.z, this.sim.world);
@@ -1516,10 +1515,20 @@ export class DriveScene {
       const rz = v.z + Math.cos(v.heading) * 0.24;
       const hFront = getContinuousAlpineHeight(fx, fz, this.sim.world);
       const hRear = getContinuousAlpineHeight(rx, rz, this.sim.world);
-      this.player.rotation.x = Math.atan2(hFront - hRear, 0.48);
+      const pitch = Math.atan2(hFront - hRear, 0.48);
+      const lx = v.x - Math.cos(v.heading) * 0.12;
+      const lz = v.z - Math.sin(v.heading) * 0.12;
+      const rx_side = v.x + Math.cos(v.heading) * 0.12;
+      const rz_side = v.z + Math.sin(v.heading) * 0.12;
+      const hLeft = getContinuousAlpineHeight(lx, lz, this.sim.world);
+      const hRight = getContinuousAlpineHeight(rx_side, rz_side, this.sim.world);
+      const roll = -Math.atan2(hRight - hLeft, 0.24);
+      this.player.rotation.order = "YXZ";
+      this.player.rotation.set(pitch, -v.heading, roll);
     } else {
       this.player.scale.set(1, 1, 1);
-      this.player.rotation.x = 0;
+      this.player.rotation.order = "XYZ";
+      this.player.rotation.set(0, -v.heading, 0);
     }
     this.wheelDirection = Math.sign(v.speed) || this.wheelDirection;
     if (this.heroCar && !this.sim.paused && !this.sim.crash)
@@ -1561,13 +1570,22 @@ export class DriveScene {
           const rz = p.z + Math.cos(p.heading) * 0.2;
           const hFront = getContinuousAlpineHeight(fx, fz, this.sim.world);
           const hRear = getContinuousAlpineHeight(rx, rz, this.sim.world);
-          m.rotation.x = Math.atan2(hFront - hRear, 0.4);
+          const pitch = Math.atan2(hFront - hRear, 0.4);
+          const lx = p.x - Math.cos(p.heading) * 0.1;
+          const lz = p.z - Math.sin(p.heading) * 0.1;
+          const rx_side = p.x + Math.cos(p.heading) * 0.1;
+          const rz_side = p.z + Math.sin(p.heading) * 0.1;
+          const hLeft = getContinuousAlpineHeight(lx, lz, this.sim.world);
+          const hRight = getContinuousAlpineHeight(rx_side, rz_side, this.sim.world);
+          const roll = -Math.atan2(hRight - hLeft, 0.2);
+          m.rotation.order = "YXZ";
+          m.rotation.set(pitch, -p.heading, roll);
         } else {
           m.scale.set(1, 1, 1);
-          m.rotation.x = 0;
+          m.rotation.order = "XYZ";
+          m.rotation.set(0, -p.heading, 0);
         }
         m.position.set(p.x, py, p.z);
-        m.rotation.y = -p.heading;
         if (m.userData.lightPool) {
           const T = this.seasonController?.time;
           const nightVal = T ? Math.max(T.night || 0, (T.evening || 0) * 0.7) : 0;
@@ -1949,30 +1967,29 @@ export class DriveScene {
       );
       look = new THREE.Vector3(v.x, py + 0.8, v.z);
     } else if (this.sim.world.type === "alpine") {
-      const view = this.cameraInput.current();
-      // True Four-Seasons Panoramic Diorama Tilt-Shift Follow Cam:
-      // Uses stable oblique vantage (~67 deg) + user orbit drag,
-      // perfectly balancing hero car, winding road, towering summits, and golden sunset sky
-      const orbitYaw = Math.PI / 4 + 0.35 + (view.yaw || 0);
-      const pitch = Math.max(0.36, Math.min(0.85, (view.pitch ?? 0.46)));
-      const dist = Math.max(12.0, Math.min(30.0, (view.distance || 15) * 1.15));
+      const view = this.cameraInput.current() || { yaw: 0, pitch: 0.38, distance: 16 };
+      // Dynamic Third-Person Chase Cam tracking behind the vehicle:
+      // Aligns with the car's heading so steering feels natural, responsive and forward-facing.
+      const yaw = v.heading + (view.yaw || 0);
+      const pitch = Math.max(0.18, Math.min(0.85, (view.pitch ?? 0.38)));
+      const dist = Math.max(4.5, Math.min(18.0, (view.distance || 16.0) * 0.42));
       const hDist = Math.cos(pitch) * dist;
-      const vHeight = Math.sin(pitch) * dist + 2.4;
+      const vHeight = Math.sin(pitch) * dist + 0.85;
       const py = this.player.position.y || 0.05;
       pos = new THREE.Vector3(
-        v.x - Math.sin(orbitYaw) * hDist,
+        v.x - Math.sin(yaw) * hDist,
         py + vHeight,
-        v.z - Math.cos(orbitYaw) * hDist,
+        v.z + Math.cos(yaw) * hDist,
       );
       // Guarantee camera remains nicely above mountain slope terrain
       const terrH = getContinuousAlpineHeight(pos.x, pos.z, this.sim.world);
-      if (pos.y < terrH + 2.5) {
-        pos.y = terrH + 2.5;
+      if (pos.y < terrH + 1.2) {
+        pos.y = terrH + 1.2;
       }
-      const ahead = 2.8;
+      const ahead = 1.8;
       look = new THREE.Vector3(
         v.x + Math.sin(v.heading) * ahead,
-        py + 0.95,
+        py + 0.55,
         v.z - Math.cos(v.heading) * ahead,
       );
     } else {
