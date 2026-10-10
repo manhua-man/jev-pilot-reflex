@@ -1,3 +1,4 @@
+#touch-controls, .touch-controls { display: none !important; visibility: hidden !important; pointer-events: none !important; }
 :root {
   font:
     13px system-ui,

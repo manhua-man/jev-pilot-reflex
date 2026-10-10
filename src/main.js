@@ -2153,4 +2153,7 @@ fetch("/api/status", { credentials: "same-origin" })
     updateCostTooltip({ input_per_million: 0.15, output_per_million: 0.60 });
   });
 
+window.__SIM__ = sim;
+window.__SCENE__ = scene;
+
 export { sim, scene };
