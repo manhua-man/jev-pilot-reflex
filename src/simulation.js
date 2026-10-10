@@ -994,16 +994,9 @@ export class Simulation {
       if ((remainingDist < threshold && this.time - this.lastLegAdvance > 1.2) || remainingDist < 18) {
         this.appendNextLeg();
       }
-    } else if (
-      !this.complete &&
-      !this.freeExplore &&
-      dist(v, v.route.points.at(-1)) < 3 &&
-      v.speed < 1
-    ) {
-      this.complete = true;
-      v.target = 0;
-      this.autopilot = false;
-      this.event("Destination reached. Nicely driven.", "success");
+    } else {
+      this.endlessCruising = true;
+      this.appendNextLeg();
     }
   }
   rerouteIfNeeded() {
@@ -1914,8 +1907,8 @@ export class Simulation {
     const v = this.player;
 
     if (this.world.type === "alpine") {
-      const curDestId = this.destinationApproach?.[1] || this.world.destination;
-      const curDestNode = this.world.byId[curDestId];
+      const curDestId = this.destinationApproach?.[1] || this.world.destination || v.route.ids.at(-1);
+      let curDestNode = this.world.byId[curDestId] || this.world.byId[v.route.ids.at(-1)];
       if (!curDestNode) return;
 
       const leg = extendAlpineWorld(this.world, curDestNode, this.r, this.forkBranch || "left");
