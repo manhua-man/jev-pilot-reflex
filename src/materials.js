@@ -79,7 +79,8 @@ export function pbr(name, tint = "#ffffff", scale = 3) {
   return materials.get(key);
 }
 
-export function material(color) {
+export function material(color = "#888888") {
+  if (!color) color = "#888888";
   if (color?.isMaterial) return color;
   if (materials.has(color)) return materials.get(color);
   const family = {
