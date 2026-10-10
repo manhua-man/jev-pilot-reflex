@@ -41,6 +41,7 @@ import {
   buildHighwayRoadNetwork,
 } from "./road-renderer.js";
 import { AlpinePassage, getContinuousAlpineHeight, CAR_SHARED } from "./alpine-world.js";
+import { PerceptionSystem } from "./perception-system.js";
 let daylight;
 function daylightEnvironment() {
   return (daylight ||= new HDRLoader(assetManager)
@@ -1438,6 +1439,7 @@ export class DriveScene {
     this.scene.add(this.sensorCone);
     this.impacts = new CrashEffects(this.scene);
     this.vectors = new RoadVectors(this.scene, this.vectorLayer);
+    this.perceptionSystem = new PerceptionSystem(this.scene, this.sim);
     this.renderer.shadowMap.needsUpdate = true;
     this.snap = true;
     this.ready = Promise.all([environmentReady, carReady, this.scenery.ready]);
@@ -1461,6 +1463,7 @@ export class DriveScene {
   dispose() {
     this.resizeObserver.disconnect();
     this.scenery.active = false;
+    this.perceptionSystem?.dispose();
     this.renderer.dispose();
   }
   buildHighway(group, world) {
@@ -1938,6 +1941,7 @@ export class DriveScene {
       );
       l.mesh.material.emissiveIntensity = on ? 0.9 : 0;
     }
+    this.perceptionSystem?.update(dt);
     this.sensorCone.visible = this.showSensors;
     this.sensorCone.position.set(v.x, 0, v.z);
     this.sensorCone.rotation.y = -v.heading;

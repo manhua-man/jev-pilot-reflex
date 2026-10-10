@@ -2968,3 +2968,137 @@ body.cinematic-mode #cinematic-pill {
 }
 
 
+
+/* ==========================================================================
+   Scenario Telemetry & Nash Game Explainer Card
+   ========================================================================== */
+
+.scenario-explainer {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-10px);
+  width: min(720px, 92vw);
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), 0 0 24px rgba(56, 189, 248, 0.2);
+  border-radius: 16px;
+  padding: 16px 20px;
+  color: #f8fafc;
+  z-index: 900;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scenario-explainer.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.scenario-explainer[hidden] {
+  display: none !important;
+}
+
+.explainer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 8px;
+}
+
+.explainer-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.explainer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+}
+
+.explainer-subtitle {
+  font-size: 13px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.explainer-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #cbd5e1;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.16s ease;
+}
+
+.explainer-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.explainer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.explainer-col {
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.explainer-col-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.explainer-col-title.c-perception { color: #38bdf8; }
+.explainer-col-title.c-nash { color: #facc15; }
+.explainer-col-title.c-shield { color: #34d399; }
+
+.explainer-col-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.explainer-metric {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 700;
+  color: #38bdf8;
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .explainer-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

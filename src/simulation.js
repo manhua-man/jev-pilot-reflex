@@ -60,7 +60,7 @@ export class Simulation {
     this.world = generateWorld(seed, type);
     this.time = 0;
     this.paused = false;
-    this.autopilot = false;
+    this.autopilot = true;
     this.safety = true;
     this.pedals = { throttle: 0, brake: 0 };
     this.steeringInput = 0;
@@ -990,8 +990,8 @@ export class Simulation {
     }
     if (this.endlessCruising) {
       const remainingDist = Math.max(0, v.route.length - v.s);
-      const threshold = this.world.type === "alpine" ? 35 : 50;
-      if (remainingDist < threshold && this.time - this.lastLegAdvance > 2.0) {
+      const threshold = this.world.type === "alpine" ? 65 : 80;
+      if ((remainingDist < threshold && this.time - this.lastLegAdvance > 1.2) || remainingDist < 18) {
         this.appendNextLeg();
       }
     } else if (
@@ -1901,13 +1901,15 @@ export class Simulation {
     v.target = 0;
     v.s = near.s;
     this.crash = null;
+    this.autopilot = true;
     this.aebActive = false;
     this.aebTimer = 0;
-    this.event("车辆已平稳复位至道路中心", "success");
+    this.event("车辆已平稳复位至道路中心并继续智驾巡航", "success");
     return true;
   }
   appendNextLeg() {
-    if (this.time - this.lastLegAdvance < 2.5) return;
+    const remainingDist = Math.max(0, this.player.route.length - this.player.s);
+    if (remainingDist >= 20 && this.time - this.lastLegAdvance < 1.5) return;
     this.lastLegAdvance = this.time;
     const v = this.player;
 
@@ -1923,6 +1925,7 @@ export class Simulation {
           const fullRoute = makeRoute(this.world, fullIds);
           if (fullRoute && fullRoute.points.length > 1) {
             v.route = this.world.route = fullRoute;
+            v.s = nearestOnPath(v, fullRoute.points, Math.floor(v.s || 0)).s;
             this.world.destination = leg.destinationId;
             this.destinationApproach = leg.pathIds.slice(-2);
             this.destinationPoint = { ...fullRoute.points.at(-1) };

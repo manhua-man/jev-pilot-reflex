@@ -40,28 +40,35 @@ export function solveLocalJev(state) {
     const v = moving[id];
     let score = 0;
 
-    // Disqualify any path with predicted collision
-    if (v.collision_imminent || v.collision_predicted) {
+    // High penalty for imminent collision
+    if (v.collision_imminent) {
       score -= 20000;
+    } else if (v.collision_predicted) {
+      score -= 3000;
     }
 
-    // High penalty for driving off road
+    // Road alignment: proportional offroad penalty rather than blanket failure
     if (v.stays_on_road) {
-      score += 200;
+      score += 300;
     } else {
-      score -= 1000;
+      score -= (v.max_offroad_fraction || 0.2) * 500;
     }
 
     // Lane centering reward: minimize lateral route error
-    score -= Math.abs(v.route_error_m || 0) * 35;
+    score -= Math.abs(v.route_error_m || 0) * 15;
 
-    // Speed efficiency: track speed ceiling smoothly
+    // Speed efficiency: encourage forward progress
     const targetSpeed = Math.max(2, state.speed_ceiling_mps || 15);
-    const speedRatio = v.velocity_mps / targetSpeed;
-    score += speedRatio * 40;
+    const speedRatio = (v.velocity_mps || 0) / targetSpeed;
+    score += speedRatio * 50;
+
+    // Extra reward for positive forward velocity over creeping/stopping
+    if (v.velocity_mps > 0.8) {
+      score += 100;
+    }
 
     // Favor smoother steering maneuvers (prevent steering flutter)
-    score -= Math.abs(v.steering) * 8;
+    score -= Math.abs(v.steering) * 6;
 
     if (score > bestScore) {
       bestScore = score;
@@ -69,8 +76,9 @@ export function solveLocalJev(state) {
     }
   }
 
-  // Emergency safety brake if all moving candidates lead to collision
-  const shouldStop = bestScore < -5000 && !!stopId;
+  // Emergency safety brake ONLY if all options lead to imminent collision
+  const allImminent = movingIds.every(id => moving[id]?.collision_imminent);
+  const shouldStop = (allImminent || (bestScore < -12000 && moving[bestId]?.collision_imminent)) && !!stopId;
   const chosenMotion = shouldStop ? "stop" : "drive";
   const motionProbs = shouldStop
     ? { stop: 0.99, drive: 0.01 }
