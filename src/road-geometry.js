@@ -53,7 +53,15 @@ export function footprint(car, padding = 0) {
 }
 
 export function roadGeometry(world) {
-  if (cache.has(world)) return cache.get(world);
+  const cached = cache.get(world);
+  if (
+    cached &&
+    cached.edgeCount === world.edges?.length &&
+    cached.nodeCount === world.nodes?.length &&
+    cached.objectCount === (world.objects?.length || 0)
+  ) {
+    return cached.surfaces;
+  }
   const surfaces = [];
   if (world.type === "highway") {
     // Match the rendered ribbon, including the non-drivable 2.1 m median.
@@ -149,7 +157,12 @@ export function roadGeometry(world) {
         ]),
       );
   }
-  cache.set(world, surfaces);
+  cache.set(world, {
+    edgeCount: world.edges?.length,
+    nodeCount: world.nodes?.length,
+    objectCount: world.objects?.length || 0,
+    surfaces,
+  });
   return surfaces;
 }
 

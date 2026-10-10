@@ -310,13 +310,16 @@ export function createObstaclePrediction(vehicle, obstacles) {
 // Predict crossing/merging conflicts, including motorcycles outside the forward lane strip.
 // The safeguard only limits speed; Jev remains responsible for steering.
 export function predictTrafficConflict(vehicle, obstacles) {
+  const isSmall = (vehicle.depth || 4.2) < 2.0;
   const target = Math.max(0, vehicle.speed, vehicle.target || 0);
-  const horizon = clamp(target / BRAKING + 1, 3, 5),
-    step = 0.1;
+  const horizon = isSmall
+    ? clamp(target / BRAKING + 0.4, 1.2, 2.0)
+    : clamp(target / BRAKING + 1, 3, 5);
+  const step = 0.1;
   const nearby = obstacles.filter(
     (o) =>
       o.id !== vehicle.id &&
-      dist(vehicle, o) < (target + Math.abs(o.speed || 0)) * horizon + 12,
+      dist(vehicle, o) < (target + Math.abs(o.speed || 0)) * horizon + (isSmall ? 4.0 : 12),
   );
   if (!nearby.length) return null;
   const ghost = { ...vehicle };
@@ -352,15 +355,20 @@ export function predictTrafficConflict(vehicle, obstacles) {
       const other = originals.get(pose.id);
       // Cover motion between samples and leave extra room around a rider.
       // Differentiate crossing pedestrians from peaceful sidewalk pedestrians.
-      const minBuffer =
-        other.type === "motorcycle"
+      const minBuffer = isSmall
+        ? other.type === "motorcycle"
+          ? 0.08
+          : other.type === "pedestrian"
+            ? (other.crossing || other.isJaywalker ? 0.20 : 0.03)
+            : 0.05
+        : other.type === "motorcycle"
           ? 0.3
           : other.type === "pedestrian"
             ? (other.crossing || other.isJaywalker ? 0.35 : 0.05)
             : 0.12;
-      const buffer =
-        minBuffer +
-        Math.min(0.35, ((ghost.speed + Math.abs(pose.speed || 0)) * step) / 3);
+      const buffer = isSmall
+        ? minBuffer + Math.min(0.12, ((ghost.speed + Math.abs(pose.speed || 0)) * step) / 5)
+        : minBuffer + Math.min(0.35, ((ghost.speed + Math.abs(pose.speed || 0)) * step) / 3);
       if (footprintClearance(ghost, pose) > buffer) continue;
       const fromBehind =
         rearFollower(vehicle, other) &&
@@ -376,7 +384,7 @@ export function predictTrafficConflict(vehicle, obstacles) {
         braking_reduces_risk: !fromBehind,
         max_speed_mps: fromBehind
           ? null
-          : brakingSpeed(traveled - (other.type === "pedestrian" ? 0.65 : 0.3)),
+          : brakingSpeed(traveled - (other.type === "pedestrian" ? (isSmall ? 0.25 : 0.65) : (isSmall ? 0.12 : 0.3))),
         reason: fromBehind
           ? "Following traffic behind"
           : other.type === "motorcycle"

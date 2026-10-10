@@ -329,12 +329,20 @@ function movingCandidates(state) {
     ([, v]) =>
       v.velocity_mps !== 0 && !(v.collision_imminent ?? v.collision_predicted),
   );
-  const forwardOnly =
-    !state.recovery?.active &&
-    ["onramp", "merge", "interstate", "exit", "offramp"].includes(
+  const isScenicOrCruise =
+    ["onramp", "merge", "interstate", "exit", "offramp", "mountain", "alpine"].includes(
       state.trip?.phase,
-    );
-  const roadSafe = state.recovery?.active
+    ) ||
+    state.trip?.theme === "alpine" ||
+    state.trip?.theme === "mountain";
+  const forwardOnly =
+    (!state.recovery?.active &&
+      ["onramp", "merge", "interstate", "exit", "offramp"].includes(
+        state.trip?.phase,
+      )) ||
+    isScenicOrCruise ||
+    Math.abs(state.ego?.speed_mps || 0) > 0.35;
+  const roadSafe = state.recovery?.active && !forwardOnly
     ? moving
     : moving.filter(
         ([, v]) =>
@@ -354,9 +362,7 @@ function movingCandidates(state) {
       ? inLane
       : returning.length
         ? returning
-        : forwardOnly
-          ? []
-          : safe;
+        : safe;
   return preferred;
 }
 

@@ -3161,7 +3161,7 @@ class AlpineChunk {
             for (const ce of this.chunkEdges) {
                 const t = clamp(((bx - ce.a.x) * ce.dx + (bz - ce.a.z) * ce.dz) / ce.l2, 0, 1);
                 const px = ce.a.x + t * ce.dx, pz = ce.a.z + t * ce.dz;
-                const rockMargin = (ce.width || 2.8) / 2 + bs + 0.35;
+                const rockMargin = (ce.width || 2.8) / 2 + bs + 1.2;
                 if ((bx - px) ** 2 + (bz - pz) ** 2 < rockMargin * rockMargin) {
                     nearRoad = true;
                     break;

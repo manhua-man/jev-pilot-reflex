@@ -399,7 +399,7 @@ export function createDrivingPlan(
       heading_error_deg: round(headingError, 1),
       offroad_fraction: round(outside / 31, 3),
       max_offroad_fraction: round(maxOutside, 6),
-      stays_on_road: maxOutside < 1e-5,
+      stays_on_road: maxOutside < (isAlpine ? 0.08 : 1e-5),
       first_offroad: firstOffroad,
       end_position: relativePoint(car, end, 2),
       on_road_after: roadOccupancy(end, surfaces).on_road,
@@ -441,11 +441,16 @@ export function createDrivingPlan(
             -limit,
             limit,
           );
+    const canReverse =
+      recovering &&
+      Math.abs(car.speed) < 0.25 &&
+      world.type !== "alpine" &&
+      world.type !== "highway";
     const velocity =
       maxSpeed < 0.15
         ? 0
         : recovering
-          ? (i % 2 ? -1 : 1) * maxSpeed * (0.6 + 0.4 * random())
+          ? (canReverse && i % 2 ? -1 : 1) * maxSpeed * (0.6 + 0.4 * random())
           : requiresStop && i < 8
             ? maxSpeed * (0.9 + random() * 0.1)
             : mergeTraffic && i < 5

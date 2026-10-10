@@ -216,9 +216,13 @@ export class Simulation {
       ids = (i % 4 < 2 ? nodes : [...nodes].reverse()).map((node) => node.id);
     } else if (alpine) {
       if (this.world.route && this.world.route.ids && this.world.route.ids.length >= 6) {
-        const wIds = this.world.route.ids;
-        const startIdx = Math.min(wIds.length - 4, Math.max(1, ((i % 4) + 1) * 2));
-        ids = wIds.slice(startIdx);
+        if (distant && this.player?.route?.length) {
+          ids = this.world.route.ids;
+        } else {
+          const wIds = this.world.route.ids;
+          const startIdx = Math.min(wIds.length - 4, Math.max(1, ((i % 4) + 1) * 2));
+          ids = wIds.slice(startIdx);
+        }
       } else {
         ids = ["alp-1", "alp-2", "alp-3", "alp-4", "alp-5", "alp-6", "alp-7"];
       }
@@ -236,10 +240,17 @@ export class Simulation {
         this.world,
         ids,
         this.world.type === "highway" && i % 2 === 0 ? 4.5 : undefined,
-      ),
-      s = this.r() * route.length,
-      p = pointAt(route.points, s),
-      next = pointAt(route.points, s + 1);
+      );
+    let s;
+    if (alpine && distant && this.player?.route?.length) {
+      const minS = Math.min(route.length - 8, (this.player.s || 0) + 10 + (i % 4) * 6);
+      const maxS = Math.min(route.length - 2, minS + 18);
+      s = minS + this.r() * Math.max(1, maxS - minS);
+    } else {
+      s = this.r() * route.length;
+    }
+    const p = pointAt(route.points, s),
+      next = pointAt(route.points, Math.min(route.length - 0.1, s + 1));
     const minDist = distant ? (alpine ? 6.0 : 600) : (alpine ? 4.5 : 15);
     if (dist(p, this.player) < minDist)
       return this.spawnTraffic(i, distant, attempt + 1);
@@ -320,30 +331,20 @@ export class Simulation {
     const lastNode = this.world.byId[ids.at(-1)];
     if (!lastNode) return;
     if (this.world.type === "alpine") {
-      if (lastNode.id === "alp-0" || dist(v, this.player) > 45) {
+      if (v.s < (this.player.s || 0) - 20 || dist(v, this.player) > 50) {
         this.spawnTraffic(Number(v.id.split("-")[1]), true);
         return;
       }
-      const forward = lastNode.neighbors.filter((id) => id !== ids.at(-2));
-      const nextId = choose(this.r, forward.length ? forward : lastNode.neighbors);
-      if (!nextId) {
-        this.spawnTraffic(Number(v.id.split("-")[1]), true);
-        return;
-      }
-      ids.push(nextId);
-      try {
-        const route = makeRoute(this.world, ids);
-        const near = nearestOnPath(v, route.points);
-        if (near.distance <= 1.0) {
-          v.route = route;
+      if (this.world.route?.points?.length) {
+        const near = nearestOnPath(v, this.world.route.points);
+        if (near.distance <= 1.5 && this.world.route.length - near.s > 8) {
+          v.route = this.world.route;
           v.s = near.s;
           v.stops = {};
-        } else {
-          this.spawnTraffic(Number(v.id.split("-")[1]), true);
+          return;
         }
-      } catch {
-        this.spawnTraffic(Number(v.id.split("-")[1]), true);
       }
+      this.spawnTraffic(Number(v.id.split("-")[1]), true);
       return;
     }
     // Rebuild from the current final road segment, before its junction enters
@@ -566,8 +567,8 @@ export class Simulation {
   leadGap(v) {
     return leadVehicle(v, [...this.traffic, ...(this.gameManager?.agents || []), this.player])?.gap ?? Infinity;
   }
-  speedEnvelope(v) {
-    const rule = this.rule(v),
+  speedEnvelope(v, update = false) {
+    const rule = this.rule(v, update),
       lead = leadVehicle(v, [...this.traffic, ...(this.gameManager?.agents || []), this.player]),
       gap = lead?.gap ?? Infinity;
     let max = Math.min(this.world.theme.limit, routeSpeedLimit(v, v.s)),
@@ -614,6 +615,20 @@ export class Simulation {
     if (conflict?.braking_reduces_risk && conflict.max_speed_mps < max) {
       max = conflict.max_speed_mps;
       reason = conflict.reason;
+    }
+    // Anti-deadlock creep: if player vehicle is stopped at a merge/crossing conflict but gap ahead is open, allow cautious creeping
+    if (
+      v === this.player &&
+      Math.abs(v.speed) < 0.15 &&
+      conflict?.reason === "Crossing or merging traffic"
+    ) {
+      this.crossingWaitSince ??= this.time;
+      if (this.time - this.crossingWaitSince > 1.5 && gap > (this.world.type === "alpine" ? 2.2 : 4.5)) {
+        max = Math.max(max, this.world.type === "alpine" ? 1.5 : 2.0);
+        reason = "Taking gap cautiously";
+      }
+    } else if (v === this.player && Math.abs(v.speed) >= 0.2) {
+      this.crossingWaitSince = null;
     }
     const released = this.courtesy.get(rule.nodeId)?.id === v.id;
     if (v !== this.player && released && !rule.mustStop && !this.complete) {
@@ -723,8 +738,12 @@ export class Simulation {
     }
     updateCourtesy(this);
     for (const v of this.traffic) {
-      if (v.route.length - v.s < (this.world.type === "alpine" ? 8 : 75)) this.continueTraffic(v);
-      const env = this.speedEnvelope(v);
+      if (
+        v.route.length - v.s < (this.world.type === "alpine" ? 8 : 75) ||
+        (this.world.type === "alpine" && v.s < (this.player.s || 0) - 25)
+      )
+        this.continueTraffic(v);
+      const env = this.speedEnvelope(v, true);
       const rule = env.rule;
       const lead = env.lead;
       let target = env.max;
@@ -800,7 +819,7 @@ export class Simulation {
           this.brakeReason = "Recovery clearance";
         }
       } else {
-        const env = this.speedEnvelope(v);
+        const env = this.speedEnvelope(v, true);
         if (target > env.max) {
           target = env.max;
           this.brakeReason = env.reason;
@@ -862,8 +881,10 @@ export class Simulation {
         dt,
         this.roadFriction,
       );
-    v.x = clamp(v.x, this.world.bounds.minX, this.world.bounds.maxX);
-    v.z = clamp(v.z, this.world.bounds.minZ, this.world.bounds.maxZ);
+    if (this.world.type !== "alpine" && !this.endlessCruising) {
+      v.x = clamp(v.x, this.world.bounds.minX, this.world.bounds.maxX);
+      v.z = clamp(v.z, this.world.bounds.minZ, this.world.bounds.maxZ);
+    }
     const hit = firstCollision(old, collisionPose(v), [
       ...this.world.objects
         .filter((o) => o.type === "building")
@@ -969,8 +990,8 @@ export class Simulation {
     }
     if (this.endlessCruising) {
       const remainingDist = Math.max(0, v.route.length - v.s);
-      const threshold = this.world.type === "alpine" ? 12 : 35;
-      if (remainingDist < threshold && this.time - this.lastLegAdvance > 2.5) {
+      const threshold = this.world.type === "alpine" ? 35 : 50;
+      if (remainingDist < threshold && this.time - this.lastLegAdvance > 2.0) {
         this.appendNextLeg();
       }
     } else if (
@@ -1858,7 +1879,7 @@ export class Simulation {
       this.complete = false;
       this.event("∞ 无尽巡航已激活：自车将连续跨片区接力巡航，永不停滞！", "success");
       const remainingDist = Math.max(0, this.player.route.length - this.player.s);
-      const threshold = this.world.type === "alpine" ? 12 : 35;
+      const threshold = this.world.type === "alpine" ? 35 : 50;
       if (remainingDist < threshold) this.appendNextLeg();
     } else {
       this.event("定点导航已激活：自车将在当前航段终点平稳制动停靠", "info");

@@ -976,7 +976,7 @@ export function extendAlpineWorld(world, fromNode, r = Math.random, branchChoice
     let cur = fromNode;
     const villageSteps = [
       { d: 3.0, dh: -0.06, control: "none", name: "Chalet Village Parkway" },
-      { d: 3.2, dh: 0.05, control: "stop", name: "Village Promenade · Crosswalk" },
+      { d: 3.2, dh: 0.05, control: "none", name: "Village Promenade · Crosswalk" },
       { d: 3.2, dh: 0.06, control: "none", name: "Village Fountain Boulevard" },
       { d: 3.0, dh: -0.05, control: "none", name: "Chalet Village Exit" },
     ];
